@@ -17,27 +17,13 @@ else:
 # ---------------------------------------------------------
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Add root AND backend to Python path
+# Add root AND backend to Python path FIRST
 sys.path.insert(0, ROOT_DIR)
 sys.path.insert(0, os.path.join(ROOT_DIR, "backend"))
 
-# ---------------------------------------------------------
-# 📦 SAFE LOGGER SETUP
-# ---------------------------------------------------------
-try:
-    from core.logging_config import get_logger
-    logger = get_logger(__name__)
-except Exception:
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
-    logger.info("⚠️ Using fallback logger")
-
-# ---------------------------------------------------------
-# 📥 IMPORT PIPELINE COMPONENTS
-# ---------------------------------------------------------
-from ml.pipeline.macro_fetcher import merge_and_process_macro
-from ml.pipeline.master_pipeline import run_pipeline
+# Debug: Print paths
+print(f"DEBUG: ROOT_DIR = {ROOT_DIR}")
+print(f"DEBUG: sys.path = {sys.path[:3]}")
 
 # ---------------------------------------------------------
 # 📁 MODEL SAVE LOCATION
@@ -52,7 +38,32 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 # Make it accessible inside pipeline
 os.environ["MODEL_DIR"] = MODEL_DIR
 
+# ---------------------------------------------------------
+# 📦 SAFE LOGGER SETUP
+# ---------------------------------------------------------
+try:
+    from core.logging_config import get_logger
+    logger = get_logger(__name__)
+except Exception as e:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    logger.warning(f"⚠️ Using fallback logger: {e}")
+
 logger.info(f"📦 Model directory set to: {MODEL_DIR}")
+
+# ---------------------------------------------------------
+# 📥 IMPORT PIPELINE COMPONENTS
+# ---------------------------------------------------------
+try:
+    from ml.pipeline.macro_fetcher import merge_and_process_macro
+    from ml.pipeline.master_pipeline import run_pipeline
+    logger.info("✅ Pipeline modules imported successfully")
+except Exception as e:
+    logger.error(f"❌ Failed to import pipeline modules: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 # ---------------------------------------------------------
 # 🚀 MAIN EXECUTION
