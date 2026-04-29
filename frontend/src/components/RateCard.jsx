@@ -1,44 +1,54 @@
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { useForecasts, useForecasts } from "../hooks/useForecasts"; // Import the hook you just updated
+import TrendingUp from "lucide-react";
 
-export default function RateCard({ latestRate, loading }) {
-  if (loading) return (
-    <div className="bg-slate-800 rounded-2xl p-6 animate-pulse">
-      <div className="h-4 bg-slate-700 rounded w-1/3 mb-4" />
-      <div className="h-10 bg-slate-700 rounded w-1/2" />
-    </div>
-  )
+export default function RateCard({ }) {
+  // We pull data from the hook which fetches from API
+  const { forecasts, loading, error } = useForecasts(7);
 
-  if (!latestRate) return null
-
-  const change = latestRate.daily_return ?? 0
-  const isUp   = change > 0
-  const isDown = change < 0
+  // We use the "latest" forecast to determine the "Live Rate"
+  const latestForecasts = forecasts.length > 0 ? forecasts[0] : null;
 
   return (
-    <div className="bg-gradient-to-br from-blue-900 to-slate-800 rounded-2xl p-6 border border-blue-700">
-      <p className="text-slate-400 text-sm font-medium uppercase tracking-wider mb-1">
-        Live MWK / USD Rate
-      </p>
-      <div className="flex items-end gap-4 mt-2">
-        <h2 className="text-5xl font-bold text-white">
-          {latestRate.rate?.toLocaleString('en-MW', { minimumFractionDigits: 2 })}
-        </h2>
-        <span className="text-slate-400 text-lg mb-1">MWK</span>
+    <div className="bg-gradient-to-br from-blue-900 to-slate-800 rounded-xl shadow-sm border border-gray-200 p-6">
+      <div className="flex flex-col gap-4">
+        <div className="flex justify-between items-center">
+          <h3 className="text-2xl font-bold text-white">MWK/USD Exchange Rate</h3>
+          
+          {/* Status Badge */}
+          <span className={`px-2 py-1 rounded-full font-bold text-xs uppercase tracking-tight ${
+            loading ? "bg-yellow-500 animate-pulse" 
+              : "bg-green-500"
+          }`}>
+            {loading ? "LIVE DATA PENDING" : "LIVE API CONNECTED"}
+          </span>
+        </div>
+
+        {/* Rate Display */}
+        <div className="mt-4">
+          {!latestForecasts ? (
+            <>
+              <div className="text-gray-200 text-center mb-1">No live data available.</div>
+            </>
+          ) : (
+              <>
+                <p className="text-4xl font-bold text-white tracking-wider">
+                  {latestForecasts.rate?.toFixed(2)} MWK
+                </p>
+                <p className="text-sm text-gray-300">as of {latestForecasts.target_date}</p>
+              </>
+          )}
+        </div>
+
+        {/* Action Button */}
+        <div className="mt-6">
+          <button 
+            onClick={() => window.location.href = "/history"} 
+            className="w-full bg-white/20 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-lg shadow-sm"
+          >
+            View Full History
+          </button>
+        </div>
       </div>
-      <div className="flex items-center gap-2 mt-3">
-        {isUp   && <TrendingUp  className="text-red-400"   size={18} />}
-        {isDown && <TrendingDown className="text-green-400" size={18} />}
-        {!isUp && !isDown && <Minus className="text-slate-400" size={18} />}
-        <span className={`text-sm font-medium ${
-          isUp ? 'text-red-400' : isDown ? 'text-green-400' : 'text-slate-400'
-        }`}>
-          {change >= 0 ? '+' : ''}{change?.toFixed(4)}% today
-        </span>
-        <span className="text-slate-500 text-xs ml-2">as of {latestRate.date}</span>
-      </div>
-      {latestRate.is_interpolated && (
-        <p className="text-yellow-500 text-xs mt-2">⚠ Estimated rate — live data pending</p>
-      )}
     </div>
-  )
-}
+  );
+};

@@ -94,3 +94,61 @@ def _safe(row, col):
     if val is None or (isinstance(val, float) and np.isnan(val)):
         return None
     return float(val)
+
+def save_to_db(db, df: pd.DataFrame):
+    """
+    Master pipeline DB writer.
+    - Inserts ONLY new records (no duplicates)
+    - Safe for automation (daily runs)
+    """
+
+    create_all_tables()
+
+    inserted = 0
+    skipped = 0
+
+    try:
+        for _, row in df.iterrows():
+            date_val = pd.to_datetime(row["date"]).date()
+
+            # Check if already exists
+            existing = db.query(ExchangeRate).filter(
+                ExchangeRate.date == date_val
+            ).first()
+
+            if existing:
+                # Replacing synthetic or old data with real data
+                existing.rate = float(row["rate"])
+                existing.open_rate = float(row["open_rate"]) if "open_rate" in df.columns and pd.notna(row.get("open_rate")) else existing.open_rate
+                existing.high_rate = float(row["high_rate"]) if "high_rate" in df.columns and pd.notna(row.get("high_rate")) else existing.high_rate
+                existing.low_rate = float(row["low_rate"]) if "low_rate" in df.columns and pd.notna(row.get("low_rate")) else existing.low_rate
+                existing.daily_return = float(row["daily_return"]) if pd.notna(row.get("daily_return")) else existing.daily_return
+                existing.source = "live_pipeline"
+                existing.updated_at = datetime.utcnow()
+
+                db.add(existing)
+                skipped += 1
+                continue
+
+            record = ExchangeRate(
+                date=date_val,
+                rate=float(row["rate"]),
+                open_rate=float(row["open_rate"]) if "open_rate" in df.columns and pd.notna(row.get("open_rate")) else None,
+                high_rate=float(row["high_rate"]) if "high_rate" in df.columns and pd.notna(row.get("high_rate")) else None,
+                low_rate=float(row["low_rate"]) if "low_rate" in df.columns and pd.notna(row.get("low_rate")) else None,
+                daily_return=float(row["daily_return"]) if pd.notna(row.get("daily_return")) else None,
+                is_interpolated=bool(row.get("is_interpolated", False)),
+                source="live_pipeline",
+            )
+
+            db.add(record)
+            inserted += 1
+
+        db.commit()
+
+        logger.info(f"DB Update → Inserted: {inserted}, Skipped: {skipped}")
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"save_to_db failed: {e}")
+        raise

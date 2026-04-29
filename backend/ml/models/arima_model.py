@@ -24,27 +24,34 @@ class ARIMAForecaster(BaseForecaster):
         self.order        = None
     
     def _safe_metric(self, key, default=None):
-        """
-        Safe access to evaluation metrics for ensemble compatibility.
-        Prevents ensemble crashes when metric missing.
-        """
         try:
             if hasattr(self, "metrics") and self.metrics is not None:
                 return self.metrics.get(key, default)
             return default
         except Exception:
             return default
+
     def fit(self, df: pd.DataFrame) -> None:
         from statsmodels.tsa.arima.model import ARIMA
         from pmdarima import auto_arima
 
         logger.info("ARIMA: Running auto_arima parameter search...")
+
+        # 🚨 DATA FILTER (CRITICAL FIX)
+        df = df.copy()
+        df = df.sort_values("date")
+        df = df[df["date"] >= pd.to_datetime("2013-01-01")]
+        df = df[df["date"] <= pd.Timestamp.today()]
+        df = df.dropna(subset=["rate"])
+
+        if len(df) < 50:
+            raise ValueError("Not enough clean data to train ARIMA")
+
         series           = df["rate"].values
         self.last_date   = df["date"].iloc[-1]
         self.train_start = df["date"].iloc[0]
         self.train_end   = df["date"].iloc[-1]
 
-        # Find best order
         auto_result = auto_arima(
             series,
             start_p=0, max_p=4,
@@ -59,7 +66,6 @@ class ARIMAForecaster(BaseForecaster):
         self.order = auto_result.order
         logger.info("ARIMA: Best order = " + str(self.order))
 
-        # Fit on full training data
         self.fitted_model = ARIMA(
             series,
             order=self.order,
@@ -67,14 +73,13 @@ class ARIMAForecaster(BaseForecaster):
             enforce_invertibility=False
         ).fit(method_kwargs={"maxiter": 200})
 
-        # ── Out-of-sample evaluation on last 60 days (ORIGINAL SCALE) ─────────
-        # Use walk-forward: train on first n-60, predict next 60 one-step ahead
         eval_size  = min(60, int(len(series) * 0.1))
         train_part = series[:-eval_size]
         test_part  = series[-eval_size:]
 
         preds = []
         history = list(train_part)
+
         for i in range(eval_size):
             model_tmp = ARIMA(history, order=self.order)
             fit_tmp   = model_tmp.fit()
@@ -86,12 +91,14 @@ class ARIMAForecaster(BaseForecaster):
         actual = test_part
 
         self.metrics = compute_all_metrics(actual, preds)
-        logger.info("ARIMA evaluation on ORIGINAL scale (walk-forward " +
-                    str(eval_size) + " steps):")
-        logger.info("  RMSE=" + str(round(self.metrics["rmse"], 4)) +
-                    "  MAE=" + str(round(self.metrics["mae"], 4)) +
-                    "  MAPE=" + str(round(self.metrics["mape"], 4)) + "%" +
-                    "  R2=" + str(round(self.metrics["r_squared"], 4)))
+
+        logger.info(
+            f"ARIMA RMSE={self.metrics['rmse']:.4f} | "
+            f"MAE={self.metrics['mae']:.4f} | "
+            f"MAPE={self.metrics['mape']:.4f}% | "
+            f"R2={self.metrics['r_squared']:.4f}"
+        )
+
         self.is_fitted = True
 
     def predict(self, horizon: int) -> dict:
@@ -105,9 +112,6 @@ class ARIMAForecaster(BaseForecaster):
         if hasattr(ci, "iloc"):
             lower = ci.iloc[:, 0].values
             upper = ci.iloc[:, 1].values
-        elif hasattr(ci, "shape") and len(ci.shape) == 2:
-            lower = ci[:, 0]
-            upper = ci[:, 1]
         else:
             lower = np.array(mean_vals) * 0.98
             upper = np.array(mean_vals) * 1.02
@@ -134,7 +138,6 @@ class ARIMAForecaster(BaseForecaster):
                 "train_end":    self.train_end,
                 "metrics":      self.metrics,
             }, f)
-        logger.info("ARIMA model saved to " + path)
 
     def load(self, path: str) -> None:
         with open(path, "rb") as f:
@@ -146,6 +149,3 @@ class ARIMAForecaster(BaseForecaster):
         self.train_end    = data["train_end"]
         self.metrics      = data["metrics"]
         self.is_fitted    = True
-        logger.info("ARIMA model loaded from " + path)
-        
-        

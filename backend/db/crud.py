@@ -8,6 +8,8 @@ from db.models import ExchangeRate, MacroIndicator, Forecast, ModelRun, DataFetc
 from datetime import date, datetime
 from typing import List, Optional
 import json
+from db.models import Forecast
+from datetime import date
 
 
 # ── Exchange Rates ─────────────────────────────────────────────────────────────
@@ -115,33 +117,40 @@ def get_latest_forecasts(db: Session, model_name: str,
         .all()
     )
 
-
-# ── Model Runs ─────────────────────────────────────────────────────────────────
-
 def save_model_run(db: Session, model_name: str, metrics: dict,
                    params: dict, mlflow_run_id: str = None,
                    train_start: date = None, train_end: date = None) -> ModelRun:
-    # Deactivate previous runs for this model
-    db.query(ModelRun).filter(ModelRun.model_name == model_name).update(
-        {"is_active": False}
-    )
-    run = ModelRun(
-        model_name=model_name,
-        mlflow_run_id=mlflow_run_id,
-        train_start=train_start,
-        train_end=train_end,
-        rmse=metrics.get("rmse"),
-        mae=metrics.get("mae"),
-        mape=metrics.get("mape"),
-        r_squared=metrics.get("r_squared"),
-        params=json.dumps(params),
-        is_active=True,
-    )
-    db.add(run)
-    db.commit()
-    db.refresh(run)
-    return run
 
+    try:
+        db.begin()
+
+        db.query(ModelRun).filter(
+            ModelRun.model_name == model_name
+        ).update({"is_active": False})
+
+        run = ModelRun(
+            model_name=model_name,
+            mlflow_run_id=mlflow_run_id,
+            train_start=train_start,
+            train_end=train_end,
+            rmse=metrics.get("rmse"),
+            mae=metrics.get("mae"),
+            mape=metrics.get("mape"),
+            r_squared=metrics.get("r_squared"),
+            params=json.dumps(params),
+            is_active=True,
+        )
+
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+
+        return run
+
+    except Exception as e:
+        db.rollback()
+        raise e
+# ── Model Runs ─────────────────────────────────────────────────────────────────
 
 def get_active_model_runs(db: Session) -> List[ModelRun]:
     return db.query(ModelRun).filter(ModelRun.is_active == True).all()
@@ -157,3 +166,14 @@ def log_fetch(db: Session, fetch_type: str, source: str,
     )
     db.add(record)
     db.commit()
+    
+def create_forecast(db: Session, forecast_data: dict):
+    """
+    Helper to create a single forecast entry.
+    """
+    # We use **forecast_data to pass only valid fields
+    db_forecast = Forecast(**forecast_data)
+    db.add(db_forecast)
+    db.commit()
+    db.refresh(db_forecast)
+    return db_forecast

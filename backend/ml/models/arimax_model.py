@@ -16,27 +16,11 @@ from statsmodels.tsa.stattools import adfuller
 logger = get_logger(__name__)
 
 
-# --------------------------------------------------
-# EXOG FEATURES
-#
-# momentum_7:  corr=0.19 with eval diffs, safe (uses rate[t-7])
-# momentum_30: corr=0.24 with eval diffs, only 0.48 corr with mom7
-#              — genuinely complementary signal
-#
-# All other candidates eliminated:
-#   daily_return:  look-ahead leak (encodes current rate change)
-#   lag features:  0.996 mutual corr = multicollinearity
-#   macro features: corr < 0.03 with y_diff
-#   rolling_mean/std: include current row = look-ahead leak
-#   roc_7: 0.978 corr with momentum_7 = redundant
-# --------------------------------------------------
 EXOG_COLS = [
-    "momentum_7",   # rate - rate.shift(7), corr=0.19 with y_diff in eval
-    "momentum_30",  # rate - rate.shift(30), corr=0.24 with y_diff in eval
+    "momentum_7",
+    "momentum_30",
 ]
 
-# BIC-penalized search — autocorr analysis shows only lag-1 is significant
-# so we bias toward simpler orders like (0,1,1) matching ARIMA's structure
 P_VALUES = [0, 1, 2]
 Q_VALUES = [0, 1, 2]
 
@@ -63,20 +47,15 @@ class ARIMAXForecaster(BaseForecaster):
         self.best_q = 1
 
     # --------------------------------------------------
-    # STATIONARITY CHECK
-    # --------------------------------------------------
     def _check_stationarity(self, y):
         try:
             p = adfuller(y)[1]
             if p > 0.05:
-                logger.debug(f"Non-stationary (p={p:.4f}) → diff=1")
                 return 1
         except Exception:
             pass
         return 0
 
-    # --------------------------------------------------
-    # PREP TARGET
     # --------------------------------------------------
     def _get_target(self, df):
         if "rate" in df.columns:
@@ -84,10 +63,8 @@ class ARIMAXForecaster(BaseForecaster):
         elif "usd_mwk" in df.columns:
             return df["usd_mwk"]
         else:
-            raise ValueError("Target column not found (rate/usd_mwk)")
+            raise ValueError("Target column not found")
 
-    # --------------------------------------------------
-    # CLEAN EXOG
     # --------------------------------------------------
     def _prepare_exog(self, df):
         df = df.copy()
@@ -104,8 +81,6 @@ class ARIMAXForecaster(BaseForecaster):
         return X
 
     # --------------------------------------------------
-    # FIT SARIMAX WITH POWELL FALLBACK
-    # --------------------------------------------------
     def _fit_sarimax(self, y, X_scaled, d, p=1, q=1, maxiter=500):
         model = SARIMAX(
             y,
@@ -117,22 +92,15 @@ class ARIMAXForecaster(BaseForecaster):
         try:
             res = model.fit(disp=False, maxiter=maxiter)
             if not res.mle_retvals.get("converged", True):
-                logger.debug(f"Primary optimizer did not converge for ({p},{d},{q}), trying Powell")
                 res = model.fit(disp=False, maxiter=maxiter, method="powell")
         except Exception:
             res = model.fit(disp=False, maxiter=maxiter, method="powell")
         return res
 
     # --------------------------------------------------
-    # ORDER SEARCH — use BIC to penalize complexity
-    # Autocorrelation analysis shows only lag-1 is significant,
-    # so BIC correctly steers toward (0,1,1) over (2,1,2)
-    # --------------------------------------------------
     def _find_best_order(self, y_trans, X_scaled, d):
         best_bic = np.inf
         best_p, best_q = 0, 1
-
-        logger.info(f"ARIMAX: searching orders p={P_VALUES} q={Q_VALUES} (BIC)")
 
         for p, q in product(P_VALUES, Q_VALUES):
             if p == 0 and q == 0:
@@ -146,8 +114,6 @@ class ARIMAXForecaster(BaseForecaster):
                     enforce_invertibility=False
                 ).fit(disp=False, maxiter=200)
 
-                # FIX: use BIC not AIC — penalizes extra AR/MA params more strongly
-                # prevents overfitting to autocorrelation structure
                 if res.bic < best_bic:
                     best_bic = res.bic
                     best_p, best_q = p, q
@@ -155,35 +121,34 @@ class ARIMAXForecaster(BaseForecaster):
             except Exception:
                 continue
 
-        logger.info(f"ARIMAX: best order=({best_p},{d},{best_q}) BIC={best_bic:.2f}")
         return best_p, best_q
 
-    # --------------------------------------------------
-    # FIT
     # --------------------------------------------------
     def fit(self, df):
 
         logger.info("ARIMAX: training started")
 
+        # 🚨 CRITICAL DATA FILTER (NEW)
         df = df.copy()
-        df = df.sort_values("date").reset_index(drop=True)
+        df = df.sort_values("date")
+        df = df[df["date"] >= pd.to_datetime("2013-01-01")]
+        df = df[df["date"] <= pd.Timestamp.today()]
+        df = df.dropna(subset=["rate"])
+
+        if len(df) < 100:
+            raise ValueError("Not enough clean data to train ARIMAX")
+
+        df = df.reset_index(drop=True)
 
         y = self._get_target(df).astype(float)
         y = y.clip(lower=y.quantile(0.01), upper=y.quantile(0.99))
 
-        df = df.loc[y.index].reset_index(drop=True)
-        y = y.reset_index(drop=True)
-
         self.last_date = df["date"].iloc[-1]
         self.last_level = float(y.iloc[-1])
 
-        # Determine diff_order ONCE — locked for entire fit + walk-forward
         self.diff_order = self._check_stationarity(y)
         y_trans = np.diff(y.values) if self.diff_order == 1 else y.values
 
-        # -------------------------
-        # EXOG
-        # -------------------------
         X = self._prepare_exog(df)
 
         if self.diff_order == 1:
@@ -196,81 +161,30 @@ class ARIMAXForecaster(BaseForecaster):
         X = X.iloc[:min_len]
         y_trans = y_trans.iloc[:min_len]
 
-        # -------------------------
-        # SCALE
-        # -------------------------
         self.feature_cols = X.columns.tolist()
         X_scaled = self.scaler.fit_transform(X)
 
-        # -------------------------
-        # ORDER SEARCH (BIC)
-        # -------------------------
         self.best_p, self.best_q = self._find_best_order(
             y_trans, X_scaled, self.diff_order
         )
 
-        final_p = self.best_p
-        final_q = self.best_q
-        final_d = self.diff_order
-
-        logger.info(f"ARIMAX: fitting final model with order=({final_p},{final_d},{final_q})")
-
         self.results = self._fit_sarimax(
             y_trans, X_scaled,
-            d=final_d, p=final_p, q=final_q
+            d=self.diff_order, p=self.best_p, q=self.best_q
         )
 
         self.last_exog = X_scaled[-1]
 
-        # -------------------------
-        # WALK-FORWARD VALIDATION using extend()
-        #
-        # extend() correctly propagates the Kalman filter state after
-        # each observed value — this preserves the MA error-correction
-        # mechanism that makes ARIMA(0,1,1) so effective.
-        #
-        # FIX: level inversion now uses the actual observed level at each
-        # step, not train_end-1, eliminating the off-by-one gap.
-        # -------------------------
+        # ---------------- WALK-FORWARD ----------------
         eval_size = min(60, int(len(df) * 0.1))
         train_end = len(df) - eval_size
 
-        # Fit base model on training window only
-        train_window = df.iloc[:train_end].copy()
-
-        y_train = self._get_target(train_window).astype(float)
-        y_train = y_train.clip(y_train.quantile(0.01), y_train.quantile(0.99))
-        y_train = y_train.reset_index(drop=True)
-
-        y_train_trans = np.diff(y_train.values) if final_d == 1 else y_train.values
-
-        X_train = self._prepare_exog(train_window)
-        if final_d == 1:
-            X_train = X_train.iloc[1:]
-
-        X_train = X_train.reset_index(drop=True)
-        min_len = min(len(X_train), len(y_train_trans))
-        X_train = X_train.iloc[:min_len]
-        y_train_trans = y_train_trans[:min_len]
-        X_train_scaled = self.scaler.transform(X_train)
-
-        try:
-            base_res = self._fit_sarimax(
-                y_train_trans, X_train_scaled,
-                d=final_d, p=final_p, q=final_q,
-                maxiter=300
-            )
-        except Exception:
-            base_res = self.results
-
-        # Roll forward one step at a time
         preds = []
-        current_res = base_res
+        current_res = self.results
 
         for i in range(eval_size):
             idx = train_end + i
 
-            # Exog for the step we are about to forecast
             X_next = self._prepare_exog(df.iloc[[idx]])
             X_next_scaled = self.scaler.transform(X_next)
 
@@ -280,38 +194,37 @@ class ARIMAXForecaster(BaseForecaster):
                     exog=X_next_scaled.reshape(1, -1)
                 )[0]
             except Exception:
-                pred_diff = float(y_diff[-1]) if final_d == 1 else float(y.iloc[idx - 1])
+                pred_diff = float(y_trans.iloc[-1])  # ✅ FIXED BUG
 
-            # FIX: use actual observed level at current step for inversion
-            # not a fixed train_end anchor — eliminates level drift
-            if final_d == 1:
-                actual_prev_level = float(self._get_target(df).iloc[idx - 1])
-                pred_level = actual_prev_level + pred_diff
+            if self.diff_order == 1:
+                prev_level = float(y.iloc[idx - 1])
+                pred_level = prev_level + pred_diff
             else:
                 pred_level = pred_diff
 
             preds.append(pred_level)
 
-            # Extend model with actual observed value — preserves error correction
+            # extend state (safe)
             try:
-                if final_d == 1:
+                if self.diff_order == 1:
                     actual_trans = float(
-                        self._get_target(df).iloc[idx] - self._get_target(df).iloc[idx - 1]
+                        y.iloc[idx] - y.iloc[idx - 1]
                     )
                 else:
-                    actual_trans = float(self._get_target(df).iloc[idx])
+                    actual_trans = float(y.iloc[idx])
 
                 X_obs_scaled = self.scaler.transform(
                     self._prepare_exog(df.iloc[[idx]])
                 )
+
                 current_res = current_res.extend(
                     endog=[actual_trans],
                     exog=X_obs_scaled
                 )
             except Exception:
-                pass  # keep current_res if extend fails
+                pass
 
-        actual = self._get_target(df).values[-eval_size:]
+        actual = y.values[-eval_size:]
         preds = np.array(preds)
 
         self.metrics = compute_all_metrics(actual, preds)
@@ -325,8 +238,6 @@ class ARIMAXForecaster(BaseForecaster):
 
         self.is_fitted = True
 
-    # --------------------------------------------------
-    # PREDICT
     # --------------------------------------------------
     def predict(self, horizon, scenario="baseline"):
 
@@ -363,9 +274,6 @@ class ARIMAXForecaster(BaseForecaster):
         }
 
     # --------------------------------------------------
-    # COMPATIBILITY HELPERS
-    # --------------------------------------------------
-
     def _safe_metric(self, key, default=999):
         try:
             if self.metrics is None:
@@ -382,8 +290,6 @@ class ARIMAXForecaster(BaseForecaster):
             "r_squared": -999
         }
 
-    # --------------------------------------------------
-    # SAVE / LOAD
     # --------------------------------------------------
     def save(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)

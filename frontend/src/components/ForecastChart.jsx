@@ -1,58 +1,128 @@
+import React from "react";
 import {
-  ResponsiveContainer, ComposedChart, Line, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend
-} from 'recharts'
+  Chart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from "recharts";
 
-export default function ForecastChart({ forecasts, allForecasts, horizon }) {
-  if (!forecasts) return (
-    <div className="bg-slate-800 rounded-2xl p-6 flex items-center justify-center h-72">
-      <p className="text-slate-500">No forecast data available. Run /api/v1/forecasts/generate</p>
-    </div>
-  )
+export const ForecastChart = ({ forecasts }) => {
+  // Validate input props
+  if (!forecasts || !Array.isArray(forecasts)) {
+    return <div className="flex justify-center items-center h-64">No forecast data available.</div>;
+  }
 
-  // Merge all model forecasts into one chart dataset
-  const ensembleData = forecasts?.forecasts ?? []
-
-  const chartData = ensembleData.map((point, i) => {
-    const row = {
-      date:     point.target_date,
-      ensemble: point.predicted_rate,
-      lower:    point.lower_bound,
-      upper:    point.upper_bound,
-    }
-    if (allForecasts?.arima?.forecasts?.[i])  row.arima  = allForecasts.arima.forecasts[i].predicted_rate
-    if (allForecasts?.arimax?.forecasts?.[i]) row.arimax = allForecasts.arimax.forecasts[i].predicted_rate
-    if (allForecasts?.lstm?.forecasts?.[i])   row.lstm   = allForecasts.lstm.forecasts[i].predicted_rate
-    return row
-  })
+  // DATA TRANSFORMATION: Ensure date is sorted for the line chart
+  const sortedData = [...forecasts].sort((a, b) => new Date(a.date) - new Date(b.date));
 
   return (
     <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
-      <h3 className="text-white font-semibold text-lg mb-4">
-        {horizon}-Day Forecast — All Models
-      </h3>
-      <ResponsiveContainer width="100%" height={320}>
-        <ComposedChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 11 }}
-            tickFormatter={v => v?.slice(5)} />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }}
-            domain={['auto', 'auto']}
-            tickFormatter={v => v?.toLocaleString()} />
-          <Tooltip
-            contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #334155', borderRadius: 8 }}
-            labelStyle={{ color: '#e2e8f0' }}
-            formatter={(val, name) => [`${val?.toLocaleString()} MWK`, name.toUpperCase()]}
+      <h2 className="text-xl font-semibold text-slate-900">7-Day Forecast</h2>
+      
+      <ResponsiveContainer width="100%" height={400}>
+        <ComposedChart
+          margin={{ top: 20, right: 20, left: 10, bottom: 10 }}
+          data={{
+            date: 'date',
+            rate: 'rate',
+          }}
+        >
+          <defs>
+            <linearGradient id="rateGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stop-color="#3b82f6" />
+              <stop offset="95%" stop-color="#1ded8" />
+            </linearGradient>
+          </defs>
+          
+          <defs>
+            <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stop-color="#3b82f6" stop-opacity="0.6" />
+              <stop offset="95%" stop-color="#1ded8" stop-opacity="0.1" />
+            </linearGradient>
+          </defs>
+          
+          {/* --- THE FORECAST LINE (Area) */}
+          <Area 
+            type="monotone"
+            dataKey="rate"
+            stroke="#3b82f6"
+            strokeWidth={2}
+            fill="url(#rateGrad)"
+            name="Forecast"
           />
-          <Legend wrapperStyle={{ color: '#94a3b8' }} />
-          <Area dataKey="upper" fill="#1d4ed820" stroke="none" />
-          <Area dataKey="lower" fill="#0f172a"   stroke="none" />
-          <Line dataKey="ensemble" stroke="#3b82f6" strokeWidth={2.5} dot={false} name="Ensemble" />
-          <Line dataKey="arima"    stroke="#f59e0b" strokeWidth={1.5} dot={false} name="ARIMA"    strokeDasharray="4 2" />
-          <Line dataKey="arimax"   stroke="#10b981" strokeWidth={1.5} dot={false} name="ARIMAX"   strokeDasharray="4 2" />
-          <Line dataKey="lstm"     stroke="#a78bfa" strokeWidth={1.5} dot={false} name="LSTM"     strokeDasharray="4 2" />
+          
+          {/* THE CONFIDENCE BAND (Visual Flair) */}
+          {/* Only show if data exists and we have enough points */}
+          {sortedData.length > 0 && sortedData.some(item => item.rate !== null) && (
+             <Area 
+              type="monotone"
+              dataKey="rate"
+                stroke="#8884d8"
+                strokeWidth={0}
+                strokeDasharray="3 3 2"
+                fillOpacity={0.05}
+                name="Confidence"
+              />
+          )}
+
+          {/* DOTS */}
+          <Line
+            type="monotone"
+            dataKey="rate"
+            stroke="#b82f6"
+            strokeWidth={2}
+            dot={true}
+            activeDot={{ r: 8, fill: "#b82f6" }}
+          />
+          
+          {/* TOOLTIP */}
+          <Tooltip 
+            contentStyle={{
+              backgroundColor: "rgba(0, 0, 0, 0.8)",
+              color: "#fff",
+              borderRadius: "4px"
+            }}
+            itemSorter={(a, b) => a.date - b.date} // Tooltip sorting
+            itemFormatter={(value, name) => (
+              <div>
+                <p className="font-bold text-gray-800">{name}</p>
+                <p className="text-sm text-gray-600">{value.date}</p>
+                <p className="text-lg font-mono font-semibold text-blue-600">{value.rate.toFixed(2)} MWK</p>
+              </div>
+            )}
+          />
+          
+          {/* Y-AXIS */}
+          <XAxis 
+            dataKey="date" 
+            tick={{ fill: "none" }} 
+            type="category" 
+            tickLine={false} 
+            axisLine={false} 
+            tickFormatter={(value) => {
+                const d = new Date(value);
+                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); 
+              }}
+            />
+          
+          <YAxis 
+            domain={[1690, 1800]} 
+            axisLine={false}
+            tickCount={5}
+            tickFormatter={(value) => `MWK ${value.toFixed(0)}`} 
+            labelStyle={{ color: "#94a3b8" }}
+          />
+          
+          <CartesianGrid strokeDasharray="3 3 2" stroke="#cbd5e1" />
+          
         </ComposedChart>
       </ResponsiveContainer>
     </div>
-  )
-}
+  );
+};
+
+export default ForecastChart;

@@ -1,41 +1,55 @@
-import { useState, useEffect } from 'react'
-import { getRates, getForecasts, getModels } from '../utils/api'
+import { useState, useEffect } from "react";
+import { fetchForecasts } from "../utils/api"; // Import from utils/api.js
 
-export function useDashboardData(horizon = 7) {
-  const [latestRate,  setLatestRate]  = useState(null)
-  const [forecasts,   setForecasts]   = useState(null)
-  const [allForecasts,setAllForecasts]= useState(null)
-  const [history,     setHistory]     = useState(null)
-  const [metrics,     setMetrics]     = useState(null)
-  const [loading,     setLoading]     = useState(true)
-  const [error,       setError]       = useState(null)
+export const useForecasts = (horizon = 7) => {
+  const [forecasts, setForecasts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true)
-      setError(null)
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      
       try {
-        const [rateRes, forecastRes, allForecastRes, histRes, metricsRes] = await Promise.allSettled([
-          getRates.latest(),
-          getForecasts.latest(horizon, 'ensemble'),
-          getForecasts.all(horizon),
-          getRates.history(),
-          getModels.performance(),
-        ])
+        console.log("📡 Fetching Live Forecasts from API...");
+        const rawData = await fetchForecasts();
+        
+        // VALIDATION: Check raw data
+        if (!rawData || !Array.isArray(rawData)) {
+            console.warn("⚠️ API returned invalid format (expected Array).");
+          setForecasts([]); // Use empty list
+          return;
+        }
 
-        if (rateRes.status === 'fulfilled')       setLatestRate(rateRes.value.data)
-        if (forecastRes.status === 'fulfilled')   setForecasts(forecastRes.value.data)
-        if (allForecastRes.status === 'fulfilled') setAllForecasts(allForecastRes.value.data)
-        if (histRes.status === 'fulfilled')       setHistory(histRes.value.data)
-        if (metricsRes.status === 'fulfilled')    setMetrics(metricsRes.value.data)
-      } catch (e) {
-        setError(e.message)
+        if (rawData.length === 0) {
+          console.warn("⚠️ API returned empty array.");
+          setForecasts([]);
+          return;
+        }
+
+        console.log(`📊 Raw API Data (Sample):`, rawData[0]);
+
+        // MAPPING: Map DB response to Chart Format
+        const formattedData = rawData.map((item) => ({
+          date: item.target_date, // Must match YYYY-MM-DD string from Backend
+          rate: parseFloat(item.predicted_rate),
+        }));
+
+        console.log("✅ Formatted Chart Data:", formattedData);
+        setForecasts(formattedData);
+
+      } catch (err) {
+        console.error("❌ Error in useForecasts:", err);
+        setError(err.message);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
-    fetchAll()
-  }, [horizon])
+    };
 
-  return { latestRate, forecasts, allForecasts, history, metrics, loading, error }
-}
+  //  load when hook is called (Dashboard mount, refresh)
+  fetchData();
+  }, [horizon, fetchData]);
+
+  return { forecasts, loading, error };
+};

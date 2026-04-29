@@ -32,7 +32,7 @@ def load_models() -> dict:
         arima = ARIMAForecaster()
         arima.load(os.path.join(artifacts, "arima.pkl"))
         loaded["arima"] = arima
-        logger.info("ARIMA loaded ✓")
+        logger.info("ARIMA loaded ")
     except Exception as e:
         logger.warning(f"ARIMA not loaded: {e}")
 
@@ -40,7 +40,7 @@ def load_models() -> dict:
         arimax = ARIMAXForecaster()
         arimax.load(os.path.join(artifacts, "arimax.pkl"))
         loaded["arimax"] = arimax
-        logger.info("ARIMAX loaded ✓")
+        logger.info("ARIMAX loaded ")
     except Exception as e:
         logger.warning(f"ARIMAX not loaded: {e}")
 
@@ -52,7 +52,7 @@ def load_models() -> dict:
             )
             ensemble.load(os.path.join(artifacts, "ensemble.pkl"))
             loaded["ensemble"] = ensemble
-            logger.info("Ensemble loaded ✓")
+            logger.info("Ensemble loaded ")
     except Exception as e:
         logger.warning(f"Ensemble not loaded: {e}")
 
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     create_all_tables()
-    logger.info("Database tables ready ✓")
+    logger.info("Database tables ready ")
     loaded = load_models()
     set_models(loaded)
     logger.info(f"Models loaded: {list(loaded.keys())}")
