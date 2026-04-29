@@ -1,6 +1,5 @@
 import sys
 import os
-import pandas as pd
 
 # ---------------------------------------------------------
 # 🌍 ENV DETECTION (Colab vs Local)
@@ -15,15 +14,24 @@ else:
 # ---------------------------------------------------------
 # 🧠 PATH SETUP (FIXES: No module named 'ml')
 # ---------------------------------------------------------
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Get the script's directory: /content/kwacha-forecasting/scripts
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Get root: /content/kwacha-forecasting
+ROOT_DIR = os.path.dirname(SCRIPT_DIR)
 
-# Add root AND backend to Python path FIRST
-sys.path.insert(0, ROOT_DIR)
-sys.path.insert(0, os.path.join(ROOT_DIR, "backend"))
-
-# Debug: Print paths
+print(f"DEBUG: SCRIPT_DIR = {SCRIPT_DIR}")
 print(f"DEBUG: ROOT_DIR = {ROOT_DIR}")
-print(f"DEBUG: sys.path = {sys.path[:3]}")
+print(f"DEBUG: backend path = {os.path.join(ROOT_DIR, 'backend')}")
+
+# Add root to path so we can import from 'backend'
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+# Verify backend/ml exists
+backend_path = os.path.join(ROOT_DIR, "backend")
+ml_path = os.path.join(backend_path, "ml")
+print(f"DEBUG: backend exists? {os.path.isdir(backend_path)}")
+print(f"DEBUG: backend/ml exists? {os.path.isdir(ml_path)}")
 
 # ---------------------------------------------------------
 # 📁 MODEL SAVE LOCATION
@@ -34,36 +42,37 @@ else:
     MODEL_DIR = os.path.join(ROOT_DIR, "backend", "ml", "artifacts")
 
 os.makedirs(MODEL_DIR, exist_ok=True)
-
-# Make it accessible inside pipeline
 os.environ["MODEL_DIR"] = MODEL_DIR
+
+print(f"✅ Model directory set to: {MODEL_DIR}")
 
 # ---------------------------------------------------------
 # 📦 SAFE LOGGER SETUP
 # ---------------------------------------------------------
 try:
-    from core.logging_config import get_logger
+    from backend.core.logging_config import get_logger
     logger = get_logger(__name__)
+    print("✅ Logger initialized")
 except Exception as e:
     import logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    logger.warning(f"⚠️ Using fallback logger: {e}")
-
-logger.info(f"📦 Model directory set to: {MODEL_DIR}")
+    print(f"⚠️ Using fallback logger: {e}")
 
 # ---------------------------------------------------------
 # 📥 IMPORT PIPELINE COMPONENTS
 # ---------------------------------------------------------
 try:
-    from ml.pipeline.macro_fetcher import merge_and_process_macro
-    from ml.pipeline.master_pipeline import run_pipeline
-    logger.info("✅ Pipeline modules imported successfully")
+    from backend.ml.pipeline.macro_fetcher import merge_and_process_macro
+    from backend.ml.pipeline.master_pipeline import run_pipeline
+    print("✅ Pipeline modules imported successfully")
 except Exception as e:
-    logger.error(f"❌ Failed to import pipeline modules: {e}")
+    print(f"❌ Failed to import pipeline modules: {e}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
+
+import pandas as pd
 
 # ---------------------------------------------------------
 # 🚀 MAIN EXECUTION
@@ -106,6 +115,5 @@ if __name__ == "__main__":
 
     except Exception as e:
         logger.error(f"💥 Crash in retrain_models.py: {e}")
-
         import traceback
         traceback.print_exc()
