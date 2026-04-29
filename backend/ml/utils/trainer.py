@@ -60,7 +60,9 @@ def train_models(df: pd.DataFrame):
     try:
         arima = ARIMAForecaster()
         arima.fit(train_df)
-        arima.save(os.path.join(ARTIFACTS, "arima.pkl"))
+        
+        MODEL_DIR = os.getenv("MODEL_DIR", "backend/ml/artifacts")
+        model.save(os.path.join(MODEL_DIR, "arima.pkl"))
 
         mid = log_model_run("arima", {"order": str(arima.order)}, arima.metrics)
         _save_to_db("arima", arima.metrics, {"order": str(arima.order)}, mid,
