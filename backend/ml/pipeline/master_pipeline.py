@@ -60,9 +60,23 @@ def run_pipeline():
         is_preprocessed = False
 
     # -----------------------------------------------------
-    # 4. Cleaning + Feature Engineering (only if needed)
+    # 4. Safely evaluate preprocessed flag (handle Series)
     # -----------------------------------------------------
-    if not is_preprocessed:
+    def _to_bool(val):
+        """Convert various types to a strict boolean, handling pandas Series/DataFrame."""
+        if hasattr(val, 'iloc'):          # pandas Series or DataFrame
+            if val.empty:
+                return False
+            # Take first element and recursively convert
+            return _to_bool(val.iloc[0])
+        return bool(val)
+
+    preprocessed_flag = _to_bool(is_preprocessed)
+
+    # -----------------------------------------------------
+    # 5. Cleaning + Feature Engineering (only if needed)
+    # -----------------------------------------------------
+    if not preprocessed_flag:
         logger.info("🧹 Cleaning data...")
         df = clean_data(df)
 
@@ -79,7 +93,7 @@ def run_pipeline():
         return None
 
     # -----------------------------------------------------
-    # 5. Train models
+    # 6. Train models
     # -----------------------------------------------------
     logger.info("🤖 Training models...")
     results = train_models(df)
