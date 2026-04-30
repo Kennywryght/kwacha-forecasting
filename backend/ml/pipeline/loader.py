@@ -20,7 +20,7 @@ def load_processed_csv() -> pd.DataFrame:
     path = os.path.abspath(
         os.path.join(
             os.path.dirname(__file__),
-            "../../../../data/processed/mwk_usd__clean.csv"
+            "../../../../data/processed/mwk_usd_clean.csv"
         )
     )
 
