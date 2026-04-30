@@ -1,13 +1,10 @@
 import logging
-from datetime import datetime
-
 from ml.pipeline.live_fetcher import fetch_latest_data
 from ml.pipeline.db_seeder import save_to_db
 from ml.pipeline.loader import load_data
 from ml.pipeline.cleaner import clean_data
 from ml.pipeline.gap_filler import fill_gaps
 from ml.pipeline.feature_engineer import engineer_features
-
 from ml.utils.trainer import train_models
 from db.database import SessionLocal
 
@@ -17,58 +14,70 @@ logger = logging.getLogger(__name__)
 def run_pipeline():
     logger.info("🚀 Starting full pipeline...")
 
-    # 1. Fetch latest data (Best effort)
-    logger.info("📡 Attempting to fetch latest exchange rate data...")
+    # -----------------------------------------------------
+    # 1. Fetch latest data
+    # -----------------------------------------------------
+    logger.info("📡 Fetching latest data...")
     try:
         raw_data = fetch_latest_data()
         if raw_data is not None:
-            logger.info("💾 Saving fetched data to database...")
             db = SessionLocal()
             save_to_db(db, raw_data)
             db.close()
-        else:
-            logger.info("⚠️ No new data fetched, continuing with existing DB data.")
     except Exception as e:
-        logger.warning(f"⚠️ Live fetch failed, but continuing: {e}")
+        logger.warning(f"⚠️ Live fetch failed: {e}")
 
-    # 2. Load full dataset (Priority: DB -> CSV Fallback)
-    logger.info("📂 Loading dataset from DB...")
-    df = load_data(source="db")
+    # -----------------------------------------------------
+    # 2. Load data (DB → CSV fallback)
+    # -----------------------------------------------------
+    logger.info("📂 Loading dataset...")
+    df = load_data("db")
+
+    MIN_ROWS = 1000
+
+    if df is None or df.empty or len(df) < MIN_ROWS:
+        logger.warning(f"⚠️ DB insufficient ({len(df)} rows) → using CSV")
+        df = load_data("csv")
 
     if df.empty:
-        logger.warning("⚠️ DB is empty. Attempting to load from CSV fallback...")
-        df = load_data(source="csv")
-
-    # Critical Check
-    if df.empty:
-        logger.error("❌ FATAL: No data available in DB or CSV. Aborting pipeline.")
+        logger.error("❌ No data available")
         return None
 
-    logger.info(f"✅ Data loaded successfully. Shape: {df.shape}")
+    logger.info(f"✅ Data loaded: {df.shape}")
 
-    # 3. Clean data
-    logger.info("🧹 Cleaning data...")
-    df = clean_data(df)
+    # -----------------------------------------------------
+    # 3. Check if already processed
+    # -----------------------------------------------------
+    is_preprocessed = df.get("is_preprocessed", False)
 
-    # 4. Fill gaps
-    logger.info("🧩 Filling missing values...")
-    df = fill_gaps(df)
+    # -----------------------------------------------------
+    # 4. Cleaning + Feature Engineering
+    # -----------------------------------------------------
+    if not is_preprocessed:
+        logger.info("🧹 Cleaning data...")
+        df = clean_data(df)
+
+        logger.info("🧩 Filling gaps...")
+        df = fill_gaps(df)
+
+        logger.info("⚙️ Engineering features...")
+        df = engineer_features(df)
+    else:
+        logger.info("⏭️ Skipping preprocessing (already processed dataset)")
 
     if df.empty:
-        logger.error("❌ Data empty after gap filling.")
+        logger.error("❌ Data empty after processing")
         return None
 
-    # 5. Feature engineering
-    logger.info("⚙️ Engineering features...")
-    df = engineer_features(df)
-
-    # 6. Train models
+    # -----------------------------------------------------
+    # 5. Train models
+    # -----------------------------------------------------
     logger.info("🤖 Training models...")
     results = train_models(df)
 
     if results:
         logger.info("✅ Pipeline completed successfully!")
     else:
-        logger.warning("⚠️ Pipeline completed, but model training returned no results.")
+        logger.warning("⚠️ No models trained")
 
     return results
