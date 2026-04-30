@@ -1,10 +1,12 @@
 import logging
+
 from ml.pipeline.live_fetcher import fetch_latest_data
 from ml.pipeline.db_seeder import save_to_db
 from ml.pipeline.loader import load_data
 from ml.pipeline.cleaner import clean_data
 from ml.pipeline.gap_filler import fill_gaps
 from ml.pipeline.feature_engineer import engineer_features
+
 from ml.utils.trainer import train_models
 from db.database import SessionLocal
 
@@ -15,7 +17,7 @@ def run_pipeline():
     logger.info("🚀 Starting full pipeline...")
 
     # -----------------------------------------------------
-    # 1. Fetch latest data
+    # 1. Fetch latest data (non-blocking)
     # -----------------------------------------------------
     logger.info("📡 Fetching latest data...")
     try:
@@ -36,22 +38,29 @@ def run_pipeline():
     MIN_ROWS = 1000
 
     if df is None or df.empty or len(df) < MIN_ROWS:
-        logger.warning(f"⚠️ DB insufficient ({len(df)} rows) → using CSV")
+        logger.warning(f"⚠️ DB insufficient ({0 if df is None else len(df)} rows) → using CSV")
         df = load_data("csv")
 
-    if df.empty:
+    if df is None or df.empty:
         logger.error("❌ No data available")
         return None
 
     logger.info(f"✅ Data loaded: {df.shape}")
 
     # -----------------------------------------------------
-    # 3. Check if already processed
+    # 3. Detect if dataset is already preprocessed
     # -----------------------------------------------------
-    is_preprocessed = df.get("is_preprocessed", False)
+    is_preprocessed = False
+
+    try:
+        # Heuristic: processed dataset has many columns (your CSV has ~33)
+        if len(df.columns) > 10:
+            is_preprocessed = True
+    except Exception:
+        is_preprocessed = False
 
     # -----------------------------------------------------
-    # 4. Cleaning + Feature Engineering
+    # 4. Cleaning + Feature Engineering (only if needed)
     # -----------------------------------------------------
     if not is_preprocessed:
         logger.info("🧹 Cleaning data...")
@@ -65,7 +74,7 @@ def run_pipeline():
     else:
         logger.info("⏭️ Skipping preprocessing (already processed dataset)")
 
-    if df.empty:
+    if df is None or df.empty:
         logger.error("❌ Data empty after processing")
         return None
 
