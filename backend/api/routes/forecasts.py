@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from db.database import get_db
 from db import crud
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 router = APIRouter(prefix="/forecasts", tags=["Forecasts"])
@@ -17,6 +17,17 @@ _models = {}
 def set_models(models: dict):
     global _models
     _models = models
+
+
+def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
+    """Replace raw['dates'] with a sequence starting from start_date."""
+    new_dates = [start_date + timedelta(days=i+1) for i in range(horizon)]
+    return {
+        "dates": new_dates,
+        "predicted": raw["predicted"][:horizon],
+        "lower_bound": raw["lower_bound"][:horizon] if "lower_bound" in raw else None,
+        "upper_bound": raw["upper_bound"][:horizon] if "upper_bound" in raw else None,
+    }
 
 
 @router.get("/latest")
@@ -31,21 +42,24 @@ def get_latest_forecasts(
         # No stored forecasts — generate on the fly if model is loaded
         if model in _models and _models[model].is_fitted:
             raw = _models[model].predict(horizon)
+            # Override dates to start from tomorrow
+            tomorrow = date.today() + timedelta(days=1)
+            adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
             return {
                 "model_name":    model,
                 "forecast_date": str(date.today()),
                 "horizon_days":  horizon,
                 "forecasts": [
                     {
-                        "target_date":   d,
+                        "target_date":   str(d),
                         "predicted_rate": p,
                         "lower_bound":   lo,
                         "upper_bound":   hi,
                         "horizon_days":  horizon,
                     }
                     for d, p, lo, hi in zip(
-                        raw["dates"], raw["predicted"],
-                        raw["lower_bound"], raw["upper_bound"]
+                        adjusted["dates"], adjusted["predicted"],
+                        adjusted["lower_bound"], adjusted["upper_bound"]
                     )
                 ],
                 "metrics": _models[model].metrics,
@@ -83,10 +97,13 @@ def generate_forecasts(
             continue
         try:
             raw = model.predict(horizon)
-            crud.save_forecasts(db, model_name, horizon, raw)
+            # Override dates to start from tomorrow
+            tomorrow = date.today() + timedelta(days=1)
+            adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
+            crud.save_forecasts(db, model_name, horizon, adjusted)
             results[model_name] = {
                 "status":   "ok",
-                "points":   len(raw["dates"]),
+                "points":   len(adjusted["dates"]),
                 "metrics":  model.metrics,
             }
         except Exception as e:

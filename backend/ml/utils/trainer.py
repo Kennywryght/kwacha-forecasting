@@ -17,7 +17,7 @@ logger   = get_logger(__name__)
 settings = get_settings()
 
 ARTIFACTS  = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../ml/artifacts"))
-TRAIN_FROM = "2020-01-01"
+TRAIN_FROM = "2014-01-01"
 
 def _save_to_db(model_name, metrics, params, mlflow_id, train_start, train_end):
     db = SessionLocal()
@@ -114,11 +114,16 @@ def train_models(df: pd.DataFrame):
         except Exception as e:
             logger.error(f"Ensemble Failed: {e}")
 
+    # ── FINAL SUMMARY (RMSE, MAE, MAPE) ───
     logger.info("=" * 55)
-    logger.info("TRAINING COMPLETE")
-    if arima: logger.info(f"ARIMA    RMSE: {round(arima.metrics['rmse'],4)}")
-    if arimax: logger.info(f"ARIMAX   RMSE: {round(arimax.metrics['rmse'],4)}")
-    if ensemble: logger.info(f"Ensemble RMSE: {round(ensemble.metrics['rmse'],4)}")
+    logger.info("TRAINING COMPLETE - Evaluation Metrics (RMSE, MAE, MAPE)")
+    logger.info("-" * 55)
+    if arima:
+        logger.info(f"ARIMA    | RMSE: {arima.metrics['rmse']:.4f} | MAE: {arima.metrics['mae']:.4f} | MAPE: {arima.metrics['mape']:.4f}%")
+    if arimax:
+        logger.info(f"ARIMAX   | RMSE: {arimax.metrics['rmse']:.4f} | MAE: {arimax.metrics['mae']:.4f} | MAPE: {arimax.metrics['mape']:.4f}%")
+    if ensemble:
+        logger.info(f"Ensemble | RMSE: {ensemble.metrics['rmse']:.4f} | MAE: {ensemble.metrics['mae']:.4f} | MAPE: {ensemble.metrics['mape']:.4f}%")
     logger.info("=" * 55)
 
     return arima, arimax, ensemble
