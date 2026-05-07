@@ -4,11 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import logging
 
-from ml.models.arima_model import ARIMAModel
-from ml.models.arimax_model import ARIMAXModel
+from ml.models.arima_model import ARIMAForecaster
+from ml.models.arimax_model import ARIMAXForecaster
 from ml.models.prophet_model import ProphetForecaster
 from ml.models.lstm_model import LSTMForecaster
-# (You’ll add LSTM later if not yet ready)
+
 
 logger = logging.getLogger(__name__)
 
