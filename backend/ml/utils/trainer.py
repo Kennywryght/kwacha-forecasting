@@ -1,129 +1,172 @@
-import pandas as pd
 import os
-import sys
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import logging
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from ml.models.arima_model import ARIMAModel
+from ml.models.arimax_model import ARIMAXModel
+from ml.models.prophet_model import ProphetForecaster
+from ml.models.lstm_model import LSTMForecaster
+# (You’ll add LSTM later if not yet ready)
 
-from db.database import SessionLocal
-from db.crud import save_model_run
-from ml.models.arima_model    import ARIMAForecaster
-from ml.models.arimax_model   import ARIMAXForecaster
-from ml.models.ensemble_model import EnsembleForecaster
-from ml.utils.mlflow_tracker  import log_model_run
-from core.config import get_settings
-from core.logging_config import get_logger
+logger = logging.getLogger(__name__)
 
-logger   = get_logger(__name__)
-settings = get_settings()
+OUTPUT_DIR = "outputs/metrics"
+PLOT_DIR = "outputs/plots"
 
-ARTIFACTS  = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../ml/artifacts"))
-TRAIN_FROM = "2014-01-01"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(PLOT_DIR, exist_ok=True)
 
-def _save_to_db(model_name, metrics, params, mlflow_id, train_start, train_end):
-    db = SessionLocal()
+
+# -----------------------------
+# METRICS FUNCTION
+# -----------------------------
+def compute_metrics(y_true, y_pred):
+    rmse = np.sqrt(np.mean((y_true - y_pred) ** 2))
+    mae = np.mean(np.abs(y_true - y_pred))
+    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+
+    return {
+        "rmse": rmse,
+        "mae": mae,
+        "mape": mape,
+    }
+
+
+# -----------------------------
+# TIME SERIES SPLIT
+# -----------------------------
+def time_series_split(df, split_ratio=0.8):
+    split_idx = int(len(df) * split_ratio)
+    return df[:split_idx], df[split_idx:]
+
+
+# -----------------------------
+# TRAIN ALL MODELS
+# -----------------------------
+def train_models(df):
+    logger.info("🚀 Starting model training pipeline...")
+
+    train_df, test_df = time_series_split(df)
+
+    results = []
+
+    # -------------------------
+    # ARIMA
+    # -------------------------
     try:
-        save_model_run(
-            db, model_name, metrics, params, mlflow_id,
-            train_start.date() if hasattr(train_start, "date") else train_start,
-            train_end.date()   if hasattr(train_end,   "date") else train_end,
-        )
-    finally:
-        db.close()
-
-# FIX: Added 'df' parameter to accept dataframe from pipeline
-def train_models(df: pd.DataFrame):
-    
-    # Check for empty data
-    if df.empty:
-        logger.error("❌ Cannot train: DataFrame is empty.")
-        return None, None, None
-
-    df = df[df["date"] >= TRAIN_FROM].copy()
-    df.reset_index(drop=True, inplace=True)
-
-    logger.info(f"Training window: {df['date'].min().date()} to {df['date'].max().date()}")
-    logger.info(f"Total rows: {len(df)}")
-
-    train_end_idx = int(len(df) * 0.70)
-    val_end_idx   = int(len(df) * 0.85)
-
-    train_df = df.iloc[:train_end_idx].copy()
-    val_df   = df.iloc[train_end_idx:val_end_idx].copy()
-    test_df  = df.iloc[val_end_idx:].copy()
-
-    os.makedirs(ARTIFACTS, exist_ok=True)
-
-    # ── ARIMA ─────────────────────────────
-    logger.info("=" * 55)
-    logger.info("Training ARIMA")
-
-    try:
-        arima = ARIMAForecaster()
+        arima = ARIMAModel()
         arima.fit(train_df)
-        
-        MODEL_DIR = os.getenv("MODEL_DIR", "backend/ml/artifacts")
-        arima.save(os.path.join(MODEL_DIR, "arima.pkl"))
 
-        mid = log_model_run("arima", {"order": str(arima.order)}, arima.metrics)
-        _save_to_db("arima", arima.metrics, {"order": str(arima.order)}, mid,
-                    arima.train_start, arima.train_end)
+        pred = arima.predict(test_df)
+
+        metrics = compute_metrics(pred["y_true"], pred["y_pred"])
+        metrics["model"] = "ARIMA"
+
+        results.append(metrics)
+
+        logger.info(f"ARIMA done: {metrics}")
+
     except Exception as e:
-        logger.error(f"ARIMA Failed: {e}")
-        arima = None
+        logger.error(f"ARIMA failed: {e}")
 
-    # ── ARIMAX ────────────────────────────
-    logger.info("=" * 55)
-    logger.info("Training ARIMAX (FIXED)")
-
+    # -------------------------
+    # ARIMAX
+    # -------------------------
     try:
-        arimax = ARIMAXForecaster()
+        arimax = ARIMAXModel()
         arimax.fit(train_df)
-        arimax.save(os.path.join(ARTIFACTS, "arimax.pkl"))
 
-        mid = log_model_run("arimax",
-                            {"order": str(arimax.order), "exog": str(arimax.exog_cols)},
-                            arimax.metrics)
+        pred = arimax.predict(test_df)
 
-        _save_to_db("arimax", arimax.metrics,
-                    {"order": str(arimax.order), "exog": str(arimax.exog_cols)},
-                    mid, arimax.train_start, arimax.train_end)
+        metrics = compute_metrics(pred["y_true"], pred["y_pred"])
+        metrics["model"] = "ARIMAX"
+
+        results.append(metrics)
+
+        logger.info(f"ARIMAX done: {metrics}")
+
     except Exception as e:
-        logger.error(f"ARIMAX Failed: {e}")
-        arimax = None
+        logger.error(f"ARIMAX failed: {e}")
 
-    # ── STACKING ENSEMBLE ─────────────────
-    logger.info("=" * 55)
-    logger.info("Building Ensemble (STACKING)")
-    
-    ensemble = None
-    if arima and arimax:
-        try:
-            ensemble = EnsembleForecaster(arima, arimax)
-            ensemble.fit(train_df)
-            ensemble.save(os.path.join(ARTIFACTS, "ensemble.pkl"))
+    # -------------------------
+    # PROPHET
+    # -------------------------
+    try:
+        prophet = ProphetForecaster()
+        prophet.fit(train_df)
 
-            mid = log_model_run("ensemble",
-                                {"type": "stacking"},
-                                ensemble.metrics)
+        pred = prophet.predict(test_df)
 
-            _save_to_db("ensemble", ensemble.metrics,
-                        {"type": "stacking"},
-                        mid,
-                        train_df["date"].iloc[0],
-                        train_df["date"].iloc[-1])
-        except Exception as e:
-            logger.error(f"Ensemble Failed: {e}")
+        metrics = prophet.evaluate(pred)
+        metrics["model"] = "Prophet"
 
-    # ── FINAL SUMMARY (RMSE, MAE, MAPE) ───
-    logger.info("=" * 55)
-    logger.info("TRAINING COMPLETE - Evaluation Metrics (RMSE, MAE, MAPE)")
-    logger.info("-" * 55)
-    if arima:
-        logger.info(f"ARIMA    | RMSE: {arima.metrics['rmse']:.4f} | MAE: {arima.metrics['mae']:.4f} | MAPE: {arima.metrics['mape']:.4f}%")
-    if arimax:
-        logger.info(f"ARIMAX   | RMSE: {arimax.metrics['rmse']:.4f} | MAE: {arimax.metrics['mae']:.4f} | MAPE: {arimax.metrics['mape']:.4f}%")
-    if ensemble:
-        logger.info(f"Ensemble | RMSE: {ensemble.metrics['rmse']:.4f} | MAE: {ensemble.metrics['mae']:.4f} | MAPE: {ensemble.metrics['mape']:.4f}%")
-    logger.info("=" * 55)
+        prophet.save_plot(pred)
 
-    return arima, arimax, ensemble
+        results.append(metrics)
+
+        logger.info(f"Prophet done: {metrics}")
+
+    except Exception as e:
+        logger.error(f"Prophet failed: {e}")
+        
+        # -------------------------
+    # LSTM
+    # -------------------------
+    try:
+        lstm = LSTMForecaster()
+
+        lstm.fit(train_df)
+
+        pred = lstm.predict(test_df)
+
+        metrics = lstm.evaluate(pred)
+
+        metrics["model"] = "LSTM"
+
+        lstm.save_results(pred)
+
+        results.append(metrics)
+
+        logger.info(f"LSTM done: {metrics}")
+
+    except Exception as e:
+        logger.error(f"LSTM failed: {e}")
+
+    # -------------------------
+    # SAVE RESULTS
+    # -------------------------
+    results_df = pd.DataFrame(results)
+
+    results_df = results_df.sort_values(by="rmse")
+
+    results_path = f"{OUTPUT_DIR}/model_comparison.csv"
+    results_df.to_csv(results_path, index=False)
+
+    logger.info(f"📊 Model comparison saved → {results_path}")
+
+    # -------------------------
+    # PLOT COMPARISON
+    # -------------------------
+    plt.figure(figsize=(8, 5))
+    plt.bar(results_df["model"], results_df["rmse"])
+    plt.title("Model Comparison (RMSE)")
+    plt.xlabel("Model")
+    plt.ylabel("RMSE")
+
+    plot_path = f"{PLOT_DIR}/model_comparison.png"
+    plt.savefig(plot_path)
+    plt.close()
+
+    logger.info(f"📈 Comparison plot saved → {plot_path}")
+
+    # -------------------------
+    # PRINT BEST MODEL
+    # -------------------------
+    best_model = results_df.iloc[0]
+
+    print("\n🏆 BEST MODEL:")
+    print(best_model)
+
+    return results_df

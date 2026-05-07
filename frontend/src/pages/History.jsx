@@ -1,3 +1,4 @@
+import React from 'react'
 import { useState } from 'react'
 import { getRates } from '../utils/api'
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts'

@@ -1,128 +1,159 @@
-import React from "react";
+import React from 'react'
 import {
-  Chart,
-  Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
+  ResponsiveContainer,
   Legend,
-  ResponsiveContainer
-} from "recharts";
+  ReferenceLine,
+} from 'recharts'
 
-export const ForecastChart = ({ forecasts }) => {
-  // Validate input props
-  if (!forecasts || !Array.isArray(forecasts)) {
-    return <div className="flex justify-center items-center h-64">No forecast data available.</div>;
+export default function ForecastChart({
+  forecasts,
+  historicalData = [],
+  horizon,
+}) {
+  if (!forecasts?.dates || !forecasts?.prediction) {
+    return (
+      <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-5">
+        <p className="text-slate-400">
+          No forecast data yet. Generate a forecast.
+        </p>
+      </div>
+    )
   }
 
-  // DATA TRANSFORMATION: Ensure date is sorted for the line chart
-  const sortedData = [...forecasts].sort((a, b) => new Date(a.date) - new Date(b.date));
+  // Historical actual values
+  const historical = historicalData.map((item) => ({
+    date: item.date,
+    actual: item.rate,
+  }))
+
+  // Forecast values
+  const future = forecasts.dates.map((date, i) => ({
+    date,
+    forecast: forecasts.prediction[i],
+    ...(forecasts.lower_95 && {
+      lower_95: forecasts.lower_95[i],
+    }),
+    ...(forecasts.upper_95 && {
+      upper_95: forecasts.upper_95[i],
+    }),
+  }))
+
+  // Merge both datasets
+  const data = [...historical, ...future]
 
   return (
-    <div className="bg-slate-800 rounded-2xl p-6 border border-slate-700">
-      <h2 className="text-xl font-semibold text-slate-900">7-Day Forecast</h2>
-      
-      <ResponsiveContainer width="100%" height={400}>
-        <ComposedChart
-          margin={{ top: 20, right: 20, left: 10, bottom: 10 }}
-          data={{
-            date: 'date',
-            rate: 'rate',
-          }}
-        >
-          <defs>
-            <linearGradient id="rateGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stop-color="#3b82f6" />
-              <stop offset="95%" stop-color="#1ded8" />
-            </linearGradient>
-          </defs>
-          
-          <defs>
-            <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stop-color="#3b82f6" stop-opacity="0.6" />
-              <stop offset="95%" stop-color="#1ded8" stop-opacity="0.1" />
-            </linearGradient>
-          </defs>
-          
-          {/* --- THE FORECAST LINE (Area) */}
-          <Area 
-            type="monotone"
-            dataKey="rate"
-            stroke="#3b82f6"
-            strokeWidth={2}
-            fill="url(#rateGrad)"
-            name="Forecast"
-          />
-          
-          {/* THE CONFIDENCE BAND (Visual Flair) */}
-          {/* Only show if data exists and we have enough points */}
-          {sortedData.length > 0 && sortedData.some(item => item.rate !== null) && (
-             <Area 
-              type="monotone"
-              dataKey="rate"
-                stroke="#8884d8"
-                strokeWidth={0}
-                strokeDasharray="3 3 2"
-                fillOpacity={0.05}
-                name="Confidence"
-              />
-          )}
+    <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-lg font-semibold text-white">
+            Exchange Rate Forecast
+          </h3>
 
-          {/* DOTS */}
+          <p className="text-sm text-slate-400 mt-1">
+            Historical vs Predicted MWK/USD Exchange Rates
+          </p>
+        </div>
+
+        <div className="text-sm text-slate-400">
+          {horizon}-Day Forecast
+        </div>
+      </div>
+
+      <ResponsiveContainer width="100%" height={380}>
+        <LineChart
+          data={data}
+          margin={{ top: 10, right: 25, left: 10, bottom: 10 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            stroke="#334155"
+          />
+
+          <XAxis
+            dataKey="date"
+            tick={{ fill: '#94a3b8', fontSize: 12 }}
+          />
+
+          <YAxis
+            tick={{ fill: '#94a3b8', fontSize: 12 }}
+            domain={['auto', 'auto']}
+          />
+
+          <Tooltip
+            contentStyle={{
+              backgroundColor: '#1e293b',
+              border: '1px solid #475569',
+              borderRadius: '10px',
+              color: '#e2e8f0',
+            }}
+          />
+
+          <Legend
+            wrapperStyle={{
+              color: '#cbd5e1',
+              paddingTop: '10px',
+            }}
+          />
+
+          {/* Actual historical values */}
           <Line
             type="monotone"
-            dataKey="rate"
-            stroke="#b82f6"
-            strokeWidth={2}
-            dot={true}
-            activeDot={{ r: 8, fill: "#b82f6" }}
+            dataKey="actual"
+            stroke="#3b82f6"
+            strokeWidth={3}
+            dot={false}
+            name="Actual"
           />
-          
-          {/* TOOLTIP */}
-          <Tooltip 
-            contentStyle={{
-              backgroundColor: "rgba(0, 0, 0, 0.8)",
-              color: "#fff",
-              borderRadius: "4px"
-            }}
-            itemSorter={(a, b) => a.date - b.date} // Tooltip sorting
-            itemFormatter={(value, name) => (
-              <div>
-                <p className="font-bold text-gray-800">{name}</p>
-                <p className="text-sm text-gray-600">{value.date}</p>
-                <p className="text-lg font-mono font-semibold text-blue-600">{value.rate.toFixed(2)} MWK</p>
-              </div>
-            )}
+
+          {/* Forecast values */}
+          <Line
+            type="monotone"
+            dataKey="forecast"
+            stroke="#ef4444"
+            strokeWidth={3}
+            strokeDasharray="6 6"
+            dot={false}
+            name="Forecast"
           />
-          
-          {/* Y-AXIS */}
-          <XAxis 
-            dataKey="date" 
-            tick={{ fill: "none" }} 
-            type="category" 
-            tickLine={false} 
-            axisLine={false} 
-            tickFormatter={(value) => {
-                const d = new Date(value);
-                return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); 
-              }}
-            />
-          
-          <YAxis 
-            domain={[1690, 1800]} 
-            axisLine={false}
-            tickCount={5}
-            tickFormatter={(value) => `MWK ${value.toFixed(0)}`} 
-            labelStyle={{ color: "#94a3b8" }}
+
+          {/* Confidence intervals */}
+          {forecasts.lower_95 && (
+            <>
+              <Line
+                type="monotone"
+                dataKey="lower_95"
+                stroke="#fca5a5"
+                strokeDasharray="3 3"
+                strokeWidth={1}
+                dot={false}
+                name="95% Lower"
+              />
+
+              <Line
+                type="monotone"
+                dataKey="upper_95"
+                stroke="#fca5a5"
+                strokeDasharray="3 3"
+                strokeWidth={1}
+                dot={false}
+                name="95% Upper"
+              />
+            </>
+          )}
+
+          <ReferenceLine
+            y={0}
+            stroke="#475569"
+            strokeDasharray="3 3"
           />
-          
-          <CartesianGrid strokeDasharray="3 3 2" stroke="#cbd5e1" />
-          
-        </ComposedChart>
+        </LineChart>
       </ResponsiveContainer>
     </div>
-  );
-};
-
-export default ForecastChart;
+  )
+}

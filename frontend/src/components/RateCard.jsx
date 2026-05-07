@@ -1,54 +1,52 @@
-import { useForecasts, useForecasts } from "../hooks/useForecasts"; // Import the hook you just updated
-import TrendingUp from "lucide-react";
+// src/components/RateCard.jsx
+import React from 'react'
 
-export default function RateCard({ }) {
-  // We pull data from the hook which fetches from API
-  const { forecasts, loading, error } = useForecasts(7);
+export default function RateCard({ latestRate, loading }) {
+  if (loading) {
+    return (
+      <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-5 animate-pulse">
+        <div className="h-4 w-28 bg-slate-700 rounded mb-2" />
+        <div className="h-8 w-24 bg-slate-700 rounded" />
+        <div className="h-3 w-16 bg-slate-700 rounded mt-2" />
+      </div>
+    )
+  }
 
-  // We use the "latest" forecast to determine the "Live Rate"
-  const latestForecasts = forecasts.length > 0 ? forecasts[0] : null;
+  if (!latestRate || typeof latestRate.rate !== 'number') {
+    return (
+      <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-5">
+        <p className="text-slate-400 text-sm">No current rate available</p>
+      </div>
+    )
+  }
+
+  const { rate, date, previous } = latestRate
+  const prev = previous ?? rate
+  const diff = rate - prev
+  const direction = diff > 0 ? 'up' : diff < 0 ? 'down' : 'flat'
+  const arrow = direction === 'up' ? '↗' : direction === 'down' ? '↘' : '→'
+  const colorClass =
+    direction === 'up' ? 'text-green-400' : direction === 'down' ? 'text-red-400' : 'text-slate-400'
 
   return (
-    <div className="bg-gradient-to-br from-blue-900 to-slate-800 rounded-xl shadow-sm border border-gray-200 p-6">
-      <div className="flex flex-col gap-4">
-        <div className="flex justify-between items-center">
-          <h3 className="text-2xl font-bold text-white">MWK/USD Exchange Rate</h3>
-          
-          {/* Status Badge */}
-          <span className={`px-2 py-1 rounded-full font-bold text-xs uppercase tracking-tight ${
-            loading ? "bg-yellow-500 animate-pulse" 
-              : "bg-green-500"
-          }`}>
-            {loading ? "LIVE DATA PENDING" : "LIVE API CONNECTED"}
-          </span>
-        </div>
-
-        {/* Rate Display */}
-        <div className="mt-4">
-          {!latestForecasts ? (
-            <>
-              <div className="text-gray-200 text-center mb-1">No live data available.</div>
-            </>
-          ) : (
-              <>
-                <p className="text-4xl font-bold text-white tracking-wider">
-                  {latestForecasts.rate?.toFixed(2)} MWK
-                </p>
-                <p className="text-sm text-gray-300">as of {latestForecasts.target_date}</p>
-              </>
+    <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-5">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-wider text-slate-400">
+            Current Rate
+          </p>
+          <p className="text-3xl font-bold text-white mt-1">
+            {rate.toFixed(4)}
+          </p>
+          {date && (
+            <p className="text-xs text-slate-500 mt-1">{date}</p>
           )}
         </div>
-
-        {/* Action Button */}
-        <div className="mt-6">
-          <button 
-            onClick={() => window.location.href = "/history"} 
-            className="w-full bg-white/20 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium rounded-lg shadow-sm"
-          >
-            View Full History
-          </button>
+        <div className={`flex items-center gap-2 text-xl font-bold ${colorClass}`}>
+          <span className="text-2xl">{arrow}</span>
+          <span>{Math.abs(diff).toFixed(4)}</span>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
