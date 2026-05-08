@@ -17,9 +17,14 @@ def compute_mape(actual: np.ndarray, predicted: np.ndarray) -> float:
     return float(np.mean(np.abs((actual[mask] - predicted[mask]) / actual[mask])) * 100)
 
 
-def compute_r2(actual: np.ndarray, predicted: np.ndarray) -> float:
-    return float(r2_score(actual, predicted))
+def compute_r2(actual, predicted):
+    actual = np.array(actual)
+    predicted = np.array(predicted)
 
+    if np.var(actual) < 1e-8:
+        return 0.0  # SAFE FALLBACK
+
+    return float(r2_score(actual, predicted))
 
 def compute_all_metrics(actual: np.ndarray, predicted: np.ndarray) -> dict:
     actual    = np.array(actual, dtype=float)

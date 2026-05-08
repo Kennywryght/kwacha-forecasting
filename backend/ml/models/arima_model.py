@@ -19,20 +19,20 @@ class ARIMAForecaster(BaseForecaster):
 
     def __init__(self):
         super().__init__("arima")
-
         self.fitted_model = None
         self.order = (1, 1, 1)
-
         self.last_date = None
         self.last_value = None
         self.metrics = {}
 
+    # -----------------------------
     def _find_diff_order(self, series):
         try:
             return 1 if adfuller(series)[1] > 0.05 else 0
         except:
             return 0
 
+    # -----------------------------
     def _find_best_order(self, series, d):
         best_aic = np.inf
         best_order = (1, d, 1)
@@ -42,7 +42,14 @@ class ARIMAForecaster(BaseForecaster):
                 if p == 0 and q == 0:
                     continue
                 try:
-                    res = ARIMA(series, order=(p, d, q)).fit()
+                    model = ARIMA(
+                        series,
+                        order=(p, d, q),
+                        enforce_stationarity=False,
+                        enforce_invertibility=False
+                    )
+                    res = model.fit()
+
                     if res.aic < best_aic:
                         best_aic = res.aic
                         best_order = (p, d, q)
@@ -51,6 +58,7 @@ class ARIMAForecaster(BaseForecaster):
 
         return best_order
 
+    # -----------------------------
     def fit(self, df):
 
         logger.info("🚀 ARIMA training started")
@@ -65,24 +73,32 @@ class ARIMAForecaster(BaseForecaster):
         if len(df) < 80:
             raise ValueError("Not enough data")
 
-        y = df["rate"].astype(float).ffill().bfill().values
+        # IMPORTANT: use SERIES (not numpy)
+        y = df["rate"].astype(float)
+        y = y.ffill().bfill()
 
         self.last_date = df["date"].iloc[-1]
-        self.last_value = float(y[-1])
+        self.last_value = float(y.iloc[-1])
 
-        d = self._find_diff_order(y)
-        self.order = self._find_best_order(y, d)
+        d = self._find_diff_order(y.values)
+        self.order = self._find_best_order(y.values, d)
 
-        self.fitted_model = ARIMA(y, order=self.order).fit()
+        self.fitted_model = ARIMA(
+            y,
+            order=self.order,
+            enforce_stationarity=False,
+            enforce_invertibility=False
+        ).fit()
 
-        # validation
+        # ---------------- validation
         eval_size = min(60, int(len(y) * 0.1))
-        train, test = y[:-eval_size], y[-eval_size:]
 
-        history = list(train)
+        train, test = y.iloc[:-eval_size], y.iloc[-eval_size:]
+
+        history = list(train.values)
         preds = []
 
-        for actual in test:
+        for actual in test.values:
             try:
                 model = ARIMA(history, order=self.order).fit()
                 pred = model.forecast(steps=1)[0]
@@ -92,11 +108,11 @@ class ARIMAForecaster(BaseForecaster):
             preds.append(float(pred))
             history.append(actual)
 
-        self.metrics = compute_all_metrics(test, preds)
+        self.metrics = compute_all_metrics(test.values, preds)
         self.is_fitted = True
 
-    # ✅ FIXED predict (major bug fix)
-    def predict(self, test_df: pd.DataFrame):
+    # -----------------------------
+    def predict(self, test_df):
 
         if not self.is_fitted:
             raise RuntimeError("ARIMA not fitted")
@@ -105,7 +121,7 @@ class ARIMAForecaster(BaseForecaster):
         test_df["date"] = pd.to_datetime(test_df["date"])
         test_df = test_df.sort_values("date")
 
-        y_true = test_df["rate"].astype(float).values
+        y_true = test_df["rate"].values
 
         history = list(self.fitted_model.data.endog)
 
@@ -126,14 +142,13 @@ class ARIMAForecaster(BaseForecaster):
             "y_pred": preds
         }
 
+    # -----------------------------
     def save(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-
         with open(path, "wb") as f:
             pickle.dump(self.__dict__, f)
 
     def load(self, path):
         with open(path, "rb") as f:
             self.__dict__.update(pickle.load(f))
-
         self.is_fitted = True

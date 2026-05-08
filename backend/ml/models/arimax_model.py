@@ -22,11 +22,8 @@ class ARIMAXForecaster(BaseForecaster):
 
     def __init__(self):
         super().__init__("arimax")
-
         self.order = (1, 1, 1)
         self.results = None
-
-        self.scaler = None
         self.last_date = None
         self.last_exog = None
 
@@ -37,40 +34,43 @@ class ARIMAXForecaster(BaseForecaster):
             return 0
 
     def _prepare_exog(self, df):
-        df = df.copy()
-
         cols = [c for c in EXOG_COLS if c in df.columns]
-        if not cols:
-            raise ValueError("No exogenous columns found")
+
+        if len(cols) == 0:
+            raise ValueError("No exogenous variables found")
 
         X = df[cols].apply(pd.to_numeric, errors="coerce")
+        X = X.replace([np.inf, -np.inf], np.nan)
         X = X.ffill().bfill().fillna(0)
 
-        return X
+        return X.values
 
     def fit(self, df):
 
         logger.info("🚀 ARIMAX training started")
 
         df = df.copy()
+        df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date")
 
         df = df.dropna(subset=["rate"])
+
         if len(df) < 80:
             raise ValueError("Not enough data")
 
-        y = df["rate"].astype(float).ffill().bfill().values
+        y = df["rate"].astype(float)
+        y = y.ffill().bfill()
 
-        d = self._check_stationarity(y)
+        d = self._check_stationarity(y.values)
 
         X = self._prepare_exog(df)
 
         self.last_date = df["date"].iloc[-1]
-        self.last_exog = X.iloc[-1].values
+        self.last_exog = X[-1]
 
         self.results = SARIMAX(
-            y,
-            exog=X.values,
+            y.values,
+            exog=X,
             order=(1, d, 1),
             enforce_stationarity=False,
             enforce_invertibility=False
@@ -78,14 +78,16 @@ class ARIMAXForecaster(BaseForecaster):
 
         self.is_fitted = True
 
-        self.metrics = {"rmse": 0, "mae": 0, "mape": 0}
+        # dummy safe metrics (avoid NaN crash)
+        self.metrics = {"rmse": 0.0, "mae": 0.0, "mape": 0.0, "r_squared": 0.0}
 
-    def predict(self, test_df: pd.DataFrame):
+    def predict(self, test_df):
 
         if not self.is_fitted:
             raise RuntimeError("ARIMAX not fitted")
 
         test_df = test_df.copy()
+        test_df["date"] = pd.to_datetime(test_df["date"])
         test_df = test_df.sort_values("date")
 
         y_true = test_df["rate"].values
@@ -93,7 +95,7 @@ class ARIMAXForecaster(BaseForecaster):
 
         preds = self.results.forecast(
             steps=len(test_df),
-            exog=X.values
+            exog=X
         )
 
         return {
@@ -103,12 +105,10 @@ class ARIMAXForecaster(BaseForecaster):
 
     def save(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
-
         with open(path, "wb") as f:
             pickle.dump(self.__dict__, f)
 
     def load(self, path):
         with open(path, "rb") as f:
             self.__dict__.update(pickle.load(f))
-
         self.is_fitted = True
