@@ -57,74 +57,58 @@ class ProphetForecaster(BaseForecaster):
     # =====================================================
     # TRAIN
     # =====================================================
-    def fit(self, df):
+     def fit(self, df):
 
-        logger.info("🚀 Prophet training started")
+    logger.info("🚀 Prophet training started")
 
-        df = self._clean_dataframe(df)
-        df = df[df["date"] >= pd.to_datetime("2013-01-01")]
+    df = self._clean_dataframe(df)
 
-        if len(df) < 100:
-            raise ValueError("Not enough data for Prophet")
+    df = df[["date", "rate"]].copy()
+    df = df.rename(columns={"date": "ds", "rate": "y"})
 
-        prophet_df = self._prepare_prophet_data(df)
-        self.last_date = prophet_df["ds"].iloc[-1]
+    df = df.sort_values("ds")
 
-        eval_size = min(60, int(len(prophet_df) * 0.1))
+    if len(df) < 100:
+        raise ValueError("Not enough data for Prophet")
 
-        train_df = prophet_df[:-eval_size]
-        test_df = prophet_df[-eval_size:]
+    self.last_date = df["ds"].iloc[-1]
 
-        self.model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=False,
-            changepoint_prior_scale=0.05,
-            seasonality_prior_scale=10.0,
-            interval_width=0.95,
-        )
+    eval_size = min(60, int(len(df) * 0.1))
 
-        self.model.fit(train_df)
+    train_df = df[:-eval_size]
+    test_df = df[-eval_size:]
 
-        # =================================================
-        # VALIDATION FORECAST
-        # =================================================
-        future = self.model.make_future_dataframe(
-            periods=int(eval_size),
-            freq="B"
-        )
+    from prophet import Prophet
 
-        forecast = self.model.predict(future)
+    self.model = Prophet(
+        yearly_seasonality=True,
+        weekly_seasonality=True,
+        daily_seasonality=False,
+        changepoint_prior_scale=0.05
+    )
 
-        preds = forecast["yhat"].tail(eval_size).values
-        actual = test_df["y"].values
+    self.model.fit(train_df)
 
-        self.metrics = compute_all_metrics(actual, preds)
+    future = self.model.make_future_dataframe(
+        periods=eval_size,
+        freq="B"
+    )
 
-        logger.info(
-            f"📊 Prophet Metrics → "
-            f"RMSE={self.metrics['rmse']:.4f} | "
-            f"MAE={self.metrics['mae']:.4f} | "
-            f"MAPE={self.metrics['mape']:.4f} | "
-            f"R2={self.metrics['r_squared']:.4f}"
-        )
+    forecast = self.model.predict(future)
 
-        # =================================================
-        # FINAL MODEL TRAIN
-        # =================================================
-        self.model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=True,
-            daily_seasonality=False,
-            changepoint_prior_scale=0.05,
-            seasonality_prior_scale=10.0,
-            interval_width=0.95,
-        )
+    preds = forecast["yhat"].tail(eval_size).values
+    actual = test_df["y"].values
 
-        self.model.fit(prophet_df)
-        self.is_fitted = True
+    from ml.utils.metrics import compute_all_metrics
 
-        logger.info("✅ Prophet training complete")
+    self.metrics = compute_all_metrics(actual, preds)
+
+    # retrain full model
+    self.model.fit(df)
+
+    self.is_fitted = True
+
+    logger.info("✅ Prophet training complete")
 
     # =====================================================
     # FORECAST
@@ -132,24 +116,32 @@ class ProphetForecaster(BaseForecaster):
     def predict(self, horizon):
 
         if not self.is_fitted:
-            raise RuntimeError("Prophet model not fitted")
+            raise RuntimeError(
+                "Prophet model not fitted"
+                
+            )
 
         # 🔥 CRITICAL FIX (your bug)
-        horizon = int(np.asarray(horizon).item())
+        horizon = int(horizon)
 
         future = self.model.make_future_dataframe(
             periods=horizon,
             freq="B"
         )
 
-        forecast = self.model.predict(future).tail(horizon)
+        forecast = self.model.predict(future)
+        forecast = forecast.tail(horizon)
+        dates = forecast["ds"].tolist()
+        predicted = forecast["yhat"].values()
+        lower = forecast["yhat_lower"].values()
+        upper = forecast["yhat_upper"].values()
 
-        return self._forecast_output(
-            forecast["ds"].tolist(),
-            forecast["yhat"].values,
-            forecast["yhat_lower"].values,
-            forecast["yhat_upper"].values,
-        )
+        return self._forecast_output {
+            dates,
+            predicted,
+            lower,
+            upper
+        }
 
     # =====================================================
     # SAVE / LOAD
