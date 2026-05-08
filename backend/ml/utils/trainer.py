@@ -35,13 +35,10 @@ def safe_metrics(model, name):
 
 def clean_dataset(df):
     df = df.copy()
-
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values("date")
-
     df = df.dropna(subset=["rate"])
     df = df.replace([np.inf, -np.inf], np.nan).ffill().bfill()
-
     return df
 
 
@@ -55,47 +52,66 @@ def train_models(df):
     logger.info("🚀 Forecast pipeline started")
 
     df = clean_dataset(df)
-
     train_df, test_df = time_series_split(df)
 
     results = []
 
+    # =====================================================
     # ARIMA
+    # =====================================================
     try:
         m = ARIMAForecaster()
         m.fit(train_df)
         pred = m.predict(test_df)
+
         results.append(safe_metrics(m, "ARIMA"))
     except Exception as e:
         logger.exception(e)
 
+    # =====================================================
     # ARIMAX
+    # =====================================================
     try:
         m = ARIMAXForecaster()
         m.fit(train_df)
         pred = m.predict(test_df)
+
         results.append(safe_metrics(m, "ARIMAX"))
     except Exception as e:
         logger.exception(e)
 
-    # Prophet
+    # =====================================================
+    # PROPHET (🔥 FIXED INTERFACE)
+    # =====================================================
     try:
         m = ProphetForecaster()
         m.fit(train_df)
-        pred = m.predict(test_df)
+
+        # 🔥 FIX: pass horizon, NOT dataframe
+        horizon = len(test_df)
+
+        pred = m.predict(horizon)
+
         results.append(safe_metrics(m, "Prophet"))
+
     except Exception as e:
         logger.exception(e)
 
+    # =====================================================
     # LSTM
+    # =====================================================
     try:
         m = LSTMForecaster()
         m.fit(train_df)
         pred = m.predict(test_df)
+
         results.append(safe_metrics(m, "LSTM"))
     except Exception as e:
         logger.exception(e)
 
+    # =====================================================
+    # RESULTS
+    # =====================================================
     results_df = pd.DataFrame(results).sort_values("rmse")
 
     results_df.to_csv(f"{OUTPUT_DIR}/model_comparison.csv", index=False)

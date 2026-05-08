@@ -278,20 +278,10 @@ class LSTMForecaster:
             )
         )
 
-        result = pd.DataFrame({
-
-            "date":
-            dates.iloc[self.sequence_length:].values,
-
-            "y_true":
-            y_true.flatten(),
-
-            "y_pred":
-            predictions.flatten()
-
-        })
-
-        return result
+        return {
+            "y_true": y_true.flatten().tolist(),
+            "y_pred": predictions.flatten().tolist()
+        }
 
     # ---------------------------------------------------
     # EVALUATE
