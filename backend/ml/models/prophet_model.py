@@ -1,171 +1,262 @@
-import pandas as pd
-from prophet import Prophet
-from datetime import date
-import joblib
 import os
-import logging
+import pickle
+import warnings
+
 import numpy as np
-import matplotlib.pyplot as plt
+import pandas as pd
 
-logger = logging.getLogger(__name__)
+from prophet import Prophet
+
+from ml.models.base_model import BaseForecaster
+from ml.utils.metrics import compute_all_metrics
+from core.logging_config import get_logger
+
+warnings.filterwarnings("ignore")
+
+logger = get_logger(__name__)
 
 
-class ProphetForecaster:
-    def __init__(self, model_path="ml/artifacts/prophet.pkl"):
+class ProphetForecaster(BaseForecaster):
+
+    def __init__(self):
+
+        super().__init__("prophet")
+
         self.model = None
-        self.model_path = model_path
-        self.metrics = {}
-        self.is_fitted = False
-        self.train_start = None
-        self.train_end = None
 
-        self.exog_cols = [
-            "Inflation",
-            "Foreign_Reserves",
-            "Lending_Interest_Rate",
-            "us_fed_rate",
-            "inflation_diff",
-            "interest_rate_diff",
+        self.last_date = None
+
+        self.metrics = {}
+
+    # =====================================================
+    # PREPARE DATA
+    # =====================================================
+    def _prepare_prophet_data(self, df):
+
+        df = df.copy()
+
+        prophet_df = pd.DataFrame()
+
+        prophet_df["ds"] = pd.to_datetime(df["date"])
+
+        if "rate" in df.columns:
+            prophet_df["y"] = df["rate"]
+
+        elif "usd_mwk" in df.columns:
+            prophet_df["y"] = df["usd_mwk"]
+
+        else:
+            raise ValueError(
+                "Target column not found"
+            )
+
+        prophet_df["y"] = (
+            prophet_df["y"]
+            .astype(float)
+            .replace([np.inf, -np.inf], np.nan)
+            .ffill()
+            .bfill()
+        )
+
+        prophet_df["y"] = prophet_df["y"].clip(
+            lower=prophet_df["y"].quantile(0.01),
+            upper=prophet_df["y"].quantile(0.99)
+        )
+
+        prophet_df = prophet_df.dropna()
+
+        return prophet_df.reset_index(drop=True)
+
+    # =====================================================
+    # TRAIN
+    # =====================================================
+    def fit(self, df):
+
+        logger.info("🚀 Prophet training started")
+
+        # -------------------------------------------------
+        # CLEAN DATA
+        # -------------------------------------------------
+        df = self._clean_dataframe(df)
+
+        df = df[
+            df["date"] >= pd.to_datetime("2013-01-01")
         ]
 
-        self.regressor_cols = []
+        if len(df) < 100:
+            raise ValueError(
+                "Not enough data for Prophet"
+            )
 
-    # -----------------------------
-    # FIT (NOW ACCEPTS TRAIN DATA)
-    # -----------------------------
-    def fit(self, train_df: pd.DataFrame) -> None:
-        logger.info("Prophet: Preparing training data...")
+        prophet_df = self._prepare_prophet_data(df)
 
-        if "date" not in train_df.columns or "rate" not in train_df.columns:
-            raise ValueError(f"Missing required columns: {train_df.columns.tolist()}")
+        self.last_date = prophet_df["ds"].iloc[-1]
 
-        df_prophet = train_df.copy().rename(columns={"date": "ds", "rate": "y"})
-
-        self.train_start = df_prophet["ds"].min().date()
-        self.train_end = df_prophet["ds"].max().date()
-
-        cols = ["ds", "y"] + [c for c in self.exog_cols if c in df_prophet.columns]
-        df_prophet = df_prophet[cols]
-
-        self.regressor_cols = [c for c in self.exog_cols if c in df_prophet.columns]
-
-        self.model = Prophet()
-
-        for col in self.regressor_cols:
-            self.model.add_regressor(col)
-
-        self.model.fit(df_prophet)
-
-        self.is_fitted = True
-        logger.info("✅ Prophet model trained")
-
-    # -----------------------------
-    # PREDICT ON TEST SET
-    # -----------------------------
-    def predict(self, test_df: pd.DataFrame) -> pd.DataFrame:
-        if not self.is_fitted:
-            raise ValueError("Model not trained yet")
-
-        df_future = test_df.copy().rename(columns={"date": "ds"})
-
-        cols = ["ds"] + [c for c in self.regressor_cols if c in df_future.columns]
-        df_future = df_future[cols]
-
-        forecast = self.model.predict(df_future)
-
-        result = pd.DataFrame({
-            "date": forecast["ds"],
-            "y_true": test_df["rate"].values,
-            "y_pred": forecast["yhat"].values
-        })
-
-        return result
-
-    # -----------------------------
-    # EVALUATE + SAVE PLOT
-    # -----------------------------
-    def evaluate(self, predictions: pd.DataFrame):
-        y_true = predictions["y_true"].values
-        y_pred = predictions["y_pred"].values
-
-        rmse = np.sqrt(np.mean((y_true - y_pred) ** 2))
-        mae = np.mean(np.abs(y_true - y_pred))
-        mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
-        r2 = 1 - (
-            np.sum((y_true - y_pred) ** 2)
-            / np.sum((y_true - np.mean(y_true)) ** 2)
+        # -------------------------------------------------
+        # TRAIN / TEST SPLIT
+        # -------------------------------------------------
+        eval_size = min(
+            60,
+            int(len(prophet_df) * 0.1)
         )
 
-        self.metrics = {
-            "rmse": rmse,
-            "mae": mae,
-            "mape": mape,
-            "r_squared": r2,
-        }
+        train_df = prophet_df[:-eval_size]
+
+        test_df = prophet_df[-eval_size:]
+
+        # -------------------------------------------------
+        # BUILD MODEL
+        # -------------------------------------------------
+        self.model = Prophet(
+
+            yearly_seasonality=True,
+
+            weekly_seasonality=True,
+
+            daily_seasonality=False,
+
+            changepoint_prior_scale=0.05,
+
+            seasonality_prior_scale=10.0,
+
+            interval_width=0.95
+        )
+
+        self.model.fit(train_df)
+
+        # -------------------------------------------------
+        # WALK FORWARD FORECAST
+        # -------------------------------------------------
+        future = self.model.make_future_dataframe(
+            periods=eval_size,
+            freq="B"
+        )
+
+        forecast = self.model.predict(future)
+
+        preds = (
+            forecast["yhat"]
+            .tail(eval_size)
+            .values
+        )
+
+        actual = test_df["y"].values
+
+        # =================================================
+        # METRICS
+        # =================================================
+        self.metrics = compute_all_metrics(
+            actual,
+            preds
+        )
 
         logger.info(
-            f"Prophet Evaluation → RMSE={rmse:.4f}, MAE={mae:.4f}, "
-            f"MAPE={mape:.2f}%, R2={r2:.4f}"
+            f"📊 Prophet Metrics → "
+            f"RMSE={self.metrics['rmse']:.4f} | "
+            f"MAE={self.metrics['mae']:.4f} | "
+            f"MAPE={self.metrics['mape']:.4f}% | "
+            f"R2={self.metrics['r_squared']:.4f}"
         )
 
-        return self.metrics
+        # -------------------------------------------------
+        # RETRAIN FULL MODEL
+        # -------------------------------------------------
+        self.model = Prophet(
 
-    # -----------------------------
-    # SAVE FORECAST PLOT (🔥 DEMO)
-    # -----------------------------
-    def save_plot(self, predictions: pd.DataFrame):
-        os.makedirs("outputs/plots", exist_ok=True)
+            yearly_seasonality=True,
 
-        plt.figure(figsize=(10, 5))
-        plt.plot(predictions["date"], predictions["y_true"], label="Actual", color="blue")
-        plt.plot(predictions["date"], predictions["y_pred"], label="Forecast", linestyle="--", color="red")
+            weekly_seasonality=True,
 
-        plt.title("Prophet Forecast vs Actual")
-        plt.xlabel("Date")
-        plt.ylabel("Exchange Rate")
-        plt.legend()
+            daily_seasonality=False,
 
-        path = "outputs/plots/prophet_forecast.png"
-        plt.savefig(path)
-        plt.close()
+            changepoint_prior_scale=0.05,
 
-        logger.info(f"📊 Forecast plot saved → {path}")
+            seasonality_prior_scale=10.0,
 
-    # -----------------------------
-    # SAVE MODEL
-    # -----------------------------
-    def save(self, path: str = None):
-        path = path or self.model_path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-
-        joblib.dump(
-            {
-                "model": self.model,
-                "metrics": self.metrics,
-                "train_start": self.train_start.isoformat() if self.train_start else None,
-                "train_end": self.train_end.isoformat() if self.train_end else None,
-            },
-            path,
+            interval_width=0.95
         )
 
-        logger.info(f"Model saved to {path}")
-
-    # -----------------------------
-    # LOAD MODEL
-    # -----------------------------
-    def load(self, path: str = None):
-        path = path or self.model_path
-
-        data = joblib.load(path)
-        self.model = data["model"]
-        self.metrics = data.get("metrics", {})
-
-        raw_start = data.get("train_start")
-        raw_end = data.get("train_end")
-
-        self.train_start = date.fromisoformat(raw_start) if raw_start else None
-        self.train_end = date.fromisoformat(raw_end) if raw_end else None
+        self.model.fit(prophet_df)
 
         self.is_fitted = True
 
-        logger.info(f"Model loaded from {path}")
+        logger.info("✅ Prophet training complete")
+
+    # =====================================================
+    # FORECAST
+    # =====================================================
+    def predict(self, horizon):
+
+        if not self.is_fitted:
+            raise RuntimeError(
+                "Prophet model not fitted"
+            )
+
+        future = self.model.make_future_dataframe(
+            periods=horizon,
+            freq="B"
+        )
+
+        forecast = self.model.predict(future)
+
+        forecast = forecast.tail(horizon)
+
+        dates = forecast["ds"].tolist()
+
+        predicted = forecast["yhat"].values
+
+        lower = forecast["yhat_lower"].values
+
+        upper = forecast["yhat_upper"].values
+
+        return self._forecast_output(
+            dates,
+            predicted,
+            lower,
+            upper
+        )
+
+    # =====================================================
+    # SAVE
+    # =====================================================
+    def save(self, path):
+
+        os.makedirs(
+            os.path.dirname(path),
+            exist_ok=True
+        )
+
+        with open(path, "wb") as f:
+
+            pickle.dump({
+
+                "model": self.model,
+                "last_date": self.last_date,
+                "metrics": self.metrics
+
+            }, f)
+
+        logger.info(
+            f"✅ Prophet saved → {path}"
+        )
+
+    # =====================================================
+    # LOAD
+    # =====================================================
+    def load(self, path):
+
+        with open(path, "rb") as f:
+
+            data = pickle.load(f)
+
+        self.model = data["model"]
+
+        self.last_date = data["last_date"]
+
+        self.metrics = data["metrics"]
+
+        self.is_fitted = True
+
+        logger.info(
+            f"✅ Prophet loaded ← {path}"
+        )

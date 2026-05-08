@@ -1,16 +1,17 @@
-import pandas as pd
-import numpy as np
-import pickle
 import os
-import sys
+import pickle
 import warnings
-warnings.filterwarnings("ignore")
+import numpy as np
+import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.stattools import adfuller
+
 from ml.models.base_model import BaseForecaster
 from ml.utils.metrics import compute_all_metrics
 from core.logging_config import get_logger
 
+warnings.filterwarnings("ignore")
 logger = get_logger(__name__)
 
 
@@ -18,134 +19,150 @@ class ARIMAForecaster(BaseForecaster):
 
     def __init__(self):
         super().__init__("arima")
-        self.model        = None
+
+        self.model = None
         self.fitted_model = None
-        self.last_date    = None
-        self.order        = None
-    
-    def _safe_metric(self, key, default=None):
+
+        self.order = (1, 1, 1)
+
+        self.last_date = None
+        self.last_value = None
+
+        self.metrics = {}
+
+    # -----------------------------
+    def _find_diff_order(self, series):
         try:
-            if hasattr(self, "metrics") and self.metrics is not None:
-                return self.metrics.get(key, default)
-            return default
-        except Exception:
-            return default
+            p_value = adfuller(series)[1]
+            return 1 if p_value > 0.05 else 0
+        except:
+            return 0
 
-    def fit(self, df: pd.DataFrame) -> None:
-        from statsmodels.tsa.arima.model import ARIMA
-        from pmdarima import auto_arima
+    # -----------------------------
+    def _find_best_order(self, series, d):
+        best_aic = np.inf
+        best_order = (1, d, 1)
 
-        logger.info("ARIMA: Running auto_arima parameter search...")
+        for p in [0, 1, 2]:
+            for q in [0, 1, 2]:
+                if p == 0 and q == 0:
+                    continue
+                try:
+                    model = ARIMA(series, order=(p, d, q))
+                    res = model.fit()
 
-        # 🚨 DATA FILTER (CRITICAL FIX)
+                    if res.aic < best_aic:
+                        best_aic = res.aic
+                        best_order = (p, d, q)
+                except:
+                    continue
+
+        return best_order
+
+    # -----------------------------
+    def fit(self, df):
+
+        logger.info("🚀 ARIMA training started")
+
         df = df.copy()
+        df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date")
-        df = df[df["date"] >= pd.to_datetime("2013-01-01")]
-        df = df[df["date"] <= pd.Timestamp.today()]
+
+        df = df[df["date"] >= "2013-01-01"]
         df = df.dropna(subset=["rate"])
 
-        if len(df) < 50:
-            raise ValueError("Not enough clean data to train ARIMA")
+        if len(df) < 80:
+            raise ValueError("Not enough data")
 
-        series           = df["rate"].values
-        self.last_date   = df["date"].iloc[-1]
-        self.train_start = df["date"].iloc[0]
-        self.train_end   = df["date"].iloc[-1]
+        y = df["rate"].astype(float)
+        y = y.ffill().bfill().values
 
-        auto_result = auto_arima(
-            series,
-            start_p=0, max_p=4,
-            start_q=0, max_q=4,
-            d=None,
-            seasonal=False,
-            information_criterion="aic",
-            stepwise=True,
-            suppress_warnings=True,
-            error_action="ignore",
-        )
-        self.order = auto_result.order
-        logger.info("ARIMA: Best order = " + str(self.order))
+        self.last_date = df["date"].iloc[-1]
+        self.last_value = float(y[-1])
+
+        d = self._find_diff_order(y)
+        self.order = self._find_best_order(y, d)
 
         self.fitted_model = ARIMA(
-            series,
-            order=self.order,
-            enforce_stationarity=False,
-            enforce_invertibility=False
-        ).fit(method_kwargs={"maxiter": 200})
+            y,
+            order=self.order
+        ).fit()
 
-        eval_size  = min(60, int(len(series) * 0.1))
-        train_part = series[:-eval_size]
-        test_part  = series[-eval_size:]
+        # ---------------- validation
+        eval_size = min(60, int(len(y) * 0.1))
+        train, test = y[:-eval_size], y[-eval_size:]
 
+        history = list(train)
         preds = []
-        history = list(train_part)
 
-        for i in range(eval_size):
-            model_tmp = ARIMA(history, order=self.order)
-            fit_tmp   = model_tmp.fit()
-            yhat      = fit_tmp.forecast(steps=1)[0]
-            preds.append(float(yhat))
-            history.append(test_part[i])
+        for actual in test:
+            try:
+                model = ARIMA(history, order=self.order).fit()
+                pred = model.forecast(steps=1)[0]
+            except:
+                pred = history[-1]
 
-        preds  = np.array(preds)
-        actual = test_part
+            preds.append(pred)
+            history.append(actual)
 
-        self.metrics = compute_all_metrics(actual, preds)
-
-        logger.info(
-            f"ARIMA RMSE={self.metrics['rmse']:.4f} | "
-            f"MAE={self.metrics['mae']:.4f} | "
-            f"MAPE={self.metrics['mape']:.4f}% | "
-            f"R2={self.metrics['r_squared']:.4f}"
+        self.metrics = self._clean_metrics(
+            compute_all_metrics(test, preds)
         )
 
         self.is_fitted = True
 
-    def predict(self, horizon: int) -> dict:
-        if not self.is_fitted:
-            raise RuntimeError("ARIMA model not fitted yet.")
+    # -----------------------------
+    def predict(self, horizon):
 
-        forecast  = self.fitted_model.get_forecast(steps=horizon)
-        mean_vals = forecast.predicted_mean
-        ci        = forecast.conf_int(alpha=0.05)
+        forecast = self.fitted_model.get_forecast(steps=horizon)
 
-        if hasattr(ci, "iloc"):
-            lower = ci.iloc[:, 0].values
-            upper = ci.iloc[:, 1].values
-        else:
-            lower = np.array(mean_vals) * 0.98
-            upper = np.array(mean_vals) * 1.02
+        mean = np.array(forecast.predicted_mean)
+        ci = forecast.conf_int()
+
+        lower = np.array(ci.iloc[:, 0])
+        upper = np.array(ci.iloc[:, 1])
 
         dates = self._business_dates(
-            self.last_date + pd.Timedelta(days=1), horizon
+            self.last_date + pd.Timedelta(days=1),
+            horizon
         )
 
         return {
-            "dates":       [d.strftime("%Y-%m-%d") for d in dates],
-            "predicted":   [round(float(v), 2) for v in mean_vals],
-            "lower_bound": [round(float(v), 2) for v in lower],
-            "upper_bound": [round(float(v), 2) for v in upper],
+            "dates": [d.strftime("%Y-%m-%d") for d in dates],
+            "predicted": mean.tolist(),
+            "lower_bound": lower.tolist(),
+            "upper_bound": upper.tolist(),
         }
 
-    def save(self, path: str) -> None:
+    # -----------------------------
+    def save(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
+
         with open(path, "wb") as f:
             pickle.dump({
-                "fitted_model": self.fitted_model,
-                "order":        self.order,
-                "last_date":    self.last_date,
-                "train_start":  self.train_start,
-                "train_end":    self.train_end,
-                "metrics":      self.metrics,
+                "model": self.fitted_model,
+                "order": self.order,
+                "metrics": self.metrics,
+                "last_date": self.last_date,
+                "last_value": self.last_value
             }, f)
 
-    def load(self, path: str) -> None:
+    def load(self, path):
         with open(path, "rb") as f:
             data = pickle.load(f)
-        self.fitted_model = data["fitted_model"]
-        self.order        = data["order"]
-        self.last_date    = data["last_date"]
-        self.train_start  = data["train_start"]
-        self.train_end    = data["train_end"]
-        self.metrics      = data["metrics"]
-        self.is_fitted    = True
+
+        self.fitted_model = data["model"]
+        self.order = data["order"]
+        self.metrics = data["metrics"]
+        self.last_date = data["last_date"]
+        self.last_value = data["last_value"]
+
+        self.is_fitted = True
+
+    def _clean_metrics(self, metrics):
+        return {
+            "rmse": float(metrics.get("rmse", np.nan)),
+            "mae": float(metrics.get("mae", np.nan)),
+            "mape": float(metrics.get("mape", np.nan)),
+            "r_squared": float(metrics.get("r_squared", np.nan)),
+        }
