@@ -19,7 +19,8 @@ class LSTMForecaster:
     def __init__(self, sequence_length=10):
         self.sequence_length = sequence_length
         self.model = None
-        self.scaler = MinMaxScaler()
+        self.x_scaler = MinMaxScaler()
+        self.y_scaler = MinMaxScaler()
 
         self.metrics = {}
 
@@ -57,14 +58,27 @@ class LSTMForecaster:
         # Keep numeric only
         df = df.select_dtypes(include=[np.number])
 
+        # Replace inf values
+     
+        df = df.replace([np.inf, -np.inf], np.nan)
+
+        # Fill missing values
+        df = df.ffill().bfill()
+
+        # Final safety
+        df = df.dropna()
+
         self.feature_columns = [c for c in df.columns if c != "rate"]
 
         X = df[self.feature_columns].values
         y = df["rate"].values.reshape(-1, 1)
 
-        # Scale
-        X_scaled = self.scaler.fit_transform(X)
-        y_scaled = self.scaler.fit_transform(y)
+        # Separate scalers
+        self.x_scaler = MinMaxScaler()
+        self.y_scaler = MinMaxScaler()
+
+        X_scaled = self.x_scaler.fit_transform(X)
+        y_scaled = self.y_scaler.fit_transform(y)
 
         return X_scaled, y_scaled
 
@@ -143,8 +157,8 @@ class LSTMForecaster:
 
         predictions_scaled = self.model.predict(X_seq)
 
-        predictions = self.scaler.inverse_transform(predictions_scaled)
-        y_true = self.scaler.inverse_transform(y_seq)
+        predictions = self.y_scaler.inverse_transform(predictions_scaled)
+        y_true = self.y_scaler.inverse_transform(y_seq)
 
         result = pd.DataFrame({
             "y_true": y_true.flatten(),
@@ -233,8 +247,8 @@ class LSTMForecaster:
         self.model.save(self.model_path)
 
         joblib.dump(
-            self.scaler,
-            "ml/artifacts/lstm_scaler.pkl"
+            self.y_scaler,
+            "ml/artifacts/lstm_y_scaler.pkl"
         )
 
         logger.info("💾 LSTM model saved")
@@ -247,8 +261,8 @@ class LSTMForecaster:
 
         self.model = load_model(self.model_path)
 
-        self.scaler = joblib.load(
-            "ml/artifacts/lstm_scaler.pkl"
+        self.y_scaler = joblib.load(
+            "ml/artifacts/lstm_y_scaler.pkl"
         )
 
         self.is_fitted = True

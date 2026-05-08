@@ -56,7 +56,7 @@ def train_models(df):
     # ARIMA
     # -------------------------
     try:
-        arima = ARIMAModel()
+        arima = ARIMAForecaster()
         arima.fit(train_df)
 
         pred = arima.predict(test_df)
@@ -75,7 +75,7 @@ def train_models(df):
     # ARIMAX
     # -------------------------
     try:
-        arimax = ARIMAXModel()
+        arimax = ARIMAXForecaster()
         arimax.fit(train_df)
 
         pred = arimax.predict(test_df)
