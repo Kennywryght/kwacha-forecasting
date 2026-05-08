@@ -113,13 +113,19 @@ def train_models(df):
     # RESULTS
     # =====================================================
     results_df = pd.DataFrame(results).sort_values("rmse")
-
-    results_df.to_csv(f"{OUTPUT_DIR}/model_comparison.csv", index=False)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(PLOT_DIR, exist_ok=True)
+    
+    results_df.to_csv(
+        os.path.join(OUTPUT_DIR, "model_comparison.csv"),
+        index=False
+        
+    )
 
     plt.figure()
     plt.bar(results_df["model"], results_df["rmse"])
     plt.title("Model Comparison")
-    plt.savefig(f"{PLOT_DIR}/comparison.png")
+    plt.savefig(os.path.join(PLOT_DIR, "comparison.png"))
     plt.close()
 
     print("\n🏆 BEST MODEL:")

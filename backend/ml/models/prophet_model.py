@@ -135,7 +135,7 @@ class ProphetForecaster(BaseForecaster):
             raise RuntimeError("Prophet model not fitted")
 
         # 🔥 CRITICAL FIX (your bug)
-        horizon = int(horizon)
+        horizon = int(np.asarray(horizon).item())
 
         future = self.model.make_future_dataframe(
             periods=horizon,
