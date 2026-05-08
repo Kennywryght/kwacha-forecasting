@@ -48,39 +48,28 @@ class ARIMAXForecaster(BaseForecaster):
 
         return X
 
+    # In arbeits/arimax_model.py  →  only the `fit` method changes
+
     def fit(self, df):
-
         logger.info("🚀 ARIMAX training started")
-
         df = df.copy()
         df = df.sort_values("date")
-
         df = df.dropna(subset=["rate"])
         if len(df) < 80:
             raise ValueError("Not enough data")
-
         y = df["rate"].astype(float).ffill().bfill().values
-
         d = self._check_stationarity(y)
-
         X = self._prepare_exog(df)
-
         self.last_date = df["date"].iloc[-1]
         self.last_exog = X.iloc[-1].values
-
-        self.results = SARIMAX(
-            y,
-            exog=X.values,
-            order=(1, d, 1),
-            enforce_stationarity=False,
-            enforce_invertibility=False
-        ).fit(disp=False)
-
+        self.results = SARIMAX(y, exog=X.values, order=(1, d, 1),
+                               enforce_stationarity=False,
+                               enforce_invertibility=False).fit(disp=False)
         self.is_fitted = True
-
-        preds = self.results.predict(start=0, end=len(y)-1, exog=X.values)
-
-        self.metrics = compute_all_metrics(y, preds)
+        # ↓↓↓ REMOVED in-sample metrics computation ↓↓↓
+        # preds = self.results.predict(start=0, end=len(y)-1, exog=X.values)
+        # self.metrics = compute_all_metrics(y, preds)
+        # ↑↑↑ REMOVED ↑↑↑
 
     def predict(self, test_df: pd.DataFrame):
 
