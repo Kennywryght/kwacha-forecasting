@@ -41,9 +41,11 @@ class LSTMForecaster:
     # ---------------------------------------------------
     def create_sequences(self, X, y):
         X_seq, y_seq = [], []
+        
         for i in range(self.sequence_length, len(X)):
             X_seq.append(X[i - self.sequence_length:i])
-            y_seq.append(y[i])
+            y_seq.append(y[i][0])
+            
         return np.array(X_seq), np.array(y_seq)
 
     # ---------------------------------------------------
@@ -68,11 +70,14 @@ class LSTMForecaster:
     # ---------------------------------------------------
     def fit_preprocess(self, df):
         df, _ = self.clean_dataframe(df)
-        self.feature_columns = [c for c in df.columns if c != "rate"]
-        X = df[self.feature_columns].values
+        
+        # use rate itself as a feature 
+        X = df["rate"].values.reshape(-1, 1)
         y = df["rate"].values.reshape(-1, 1)
+        
         X_scaled = self.x_scaler.fit_transform(X)
         y_scaled = self.y_scaler.fit_transform(y)
+        
         return X_scaled, y_scaled
 
     # ---------------------------------------------------
@@ -80,7 +85,7 @@ class LSTMForecaster:
     # ---------------------------------------------------
     def transform_preprocess(self, df):
         df, dates = self.clean_dataframe(df)
-        X = df[self.feature_columns].values
+        X = df["rate"].values.reshape(-1, 1)
         y = df["rate"].values.reshape(-1, 1)
         X_scaled = self.x_scaler.transform(X)
         y_scaled = self.y_scaler.transform(y)

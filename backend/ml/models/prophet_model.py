@@ -57,7 +57,7 @@ class ProphetForecaster(BaseForecaster):
     # =====================================================
     def fit(self, df):
 
-        logger.info("🚀 Prophet training started")
+        logger.info(" Prophet training started")
 
         df = self._clean_dataframe(df)
         df = df[["date", "rate"]].copy()
@@ -74,21 +74,21 @@ class ProphetForecaster(BaseForecaster):
         train_df = df[:-eval_size]
         test_df = df[-eval_size:]
 
-        self.model = Prophet(
+        eval_model = Prophet(
             yearly_seasonality=True,
             weekly_seasonality=True,
             daily_seasonality=False,
             changepoint_prior_scale=0.05
         )
 
-        self.model.fit(train_df)
+        eval_model.fit(train_df)
 
-        future = self.model.make_future_dataframe(
+        future = eval_model.make_future_dataframe(
             periods=eval_size,
             freq="B"
         )
 
-        forecast = self.model.predict(future)
+        forecast = eval_model.predict(future)
 
         preds = forecast["yhat"].tail(eval_size).values
         actual = test_df["y"].values
@@ -96,11 +96,17 @@ class ProphetForecaster(BaseForecaster):
         self.metrics = compute_all_metrics(actual, preds)
 
         # retrain full model
+        self.model = Prophet(
+            yearly_seasonality=True,
+            weekly_seasonality=True,
+            daily_seasonality=False,
+            changepoint_prior_scale=0.05
+        )
         self.model.fit(df)
 
         self.is_fitted = True
 
-        logger.info("✅ Prophet training complete")
+        logger.info(" Prophet training complete")
 
     # =====================================================
     # FORECAST

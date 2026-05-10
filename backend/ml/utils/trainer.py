@@ -86,9 +86,15 @@ def train_models(df):
             "y_pred": pred_df["predicted"].values
         }
         metrics = evaluate_prediction_dict(prophet_pred)
+        
         m.metrics = metrics
-        results.append({"model": "Prophet", **metrics})
+        
+        results.append({
+            "model": "Prophet", 
+            **metrics
+        })
         logger.info(f"Prophet Metrics: {metrics}")
+        
     except Exception as e:
         logger.exception(f"Prophet failed: {e}")
 
