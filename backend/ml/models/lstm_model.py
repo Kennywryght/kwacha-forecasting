@@ -13,7 +13,7 @@ from sklearn.metrics import (
     mean_absolute_error,
     r2_score
 )
-
+from backend.ml.pipeline.feature_engineer import engineer_features 
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import EarlyStopping
@@ -72,22 +72,22 @@ class LSTMForecaster:
     # =====================================================
 
     def prepare_features(self, df):
-
-        df = self.clean_dataframe(df)
-
-        df["lag_1"] = df["rate"].shift(1)
-        df["lag_2"] = df["rate"].shift(2)
-        df["lag_3"] = df["rate"].shift(3)
-
-        df = df.dropna()
-
-        self.feature_columns = ["lag_1", "lag_2", "lag_3"]
-
-        X = df[self.feature_columns].values
-
+        
+        df = df.copy()
+        
+        # using the pipeline's powerful feature engineer
+        df, _ = engineer_features(df)
+        
+        #drop non-numeric columns
+        exclude_cols = ['date', 'rate']
+        feature_cols = [col for col in df.columns if col not in exclude_cols]
+        
+        self.feature_columns = feature_cols
+        
+        x = df[feature_cols].values
         y = df["rate"].values.reshape(-1, 1)
-
-        return X, y
+        
+        return x, y, df # return df too 
 
     # =====================================================
     # CREATE SEQUENCES
@@ -114,29 +114,18 @@ class LSTMForecaster:
 
     def build_model(self, input_shape):
 
-        model = Sequential()
-
-        model.add(
-            LSTM(
-                32,
-                input_shape=input_shape,
-                return_sequences=False
-            )
-        )
-
-        model.add(Dropout(0.2))
-
-        model.add(Dense(16, activation="relu"))
-
-        model.add(Dense(1))
-
-        optimizer = Adam(
-            learning_rate=0.001
-        )
+        model = Sequential([
+            LSTM(64, input_shape=input_shape, return_sequences=True),
+            Dropout(0.25),
+            LSTM(32, return_sequences=False),
+            Dropout(0.5),
+            Dense(16, activation="relu")
+            Dense(1)
+        ])
 
         model.compile(
-            optimizer=optimizer,
-            loss="mse"
+            optimizer=Adam(learning_rate=0.0008),
+            loss=tf.keras.losses.Huber(delta=1.0)
         )
 
         return model
@@ -149,7 +138,7 @@ class LSTMForecaster:
 
         logger.info("🚀 Training LSTM model...")
 
-        X, y = self.prepare_features(train_df)
+        X, y, _ = self.prepare_features(train_df)
 
         X_scaled = self.x_scaler.fit_transform(X)
 
@@ -196,33 +185,30 @@ class LSTMForecaster:
         if not self.is_fitted:
             raise RuntimeError("Model not fitted")
 
-        X, y = self.prepare_features(test_df)
+        X, y, df_test = self.prepare_features(test_df)
 
         X_scaled = self.x_scaler.transform(X)
-
-        y_scaled = self.y_scaler.transform(y)
-
-        X_seq, y_seq = self.create_sequences(
+        
+        X_seq, _ = self.create_sequences(
             X_scaled,
-            y_scaled
+            np.zeros_like(y) # dummy y for sequence creation
         )
-
-        predictions_scaled = self.model.predict(X_seq)
-
-        # IMPORTANT FIX
-        predictions = self.y_scaler.inverse_transform(
-            predictions_scaled.reshape(-1, 1)
-        )
-
-        y_true = self.y_scaler.inverse_transform(
-            y_seq.reshape(-1, 1)
-        )
-
+        
+        predictions_scaled = self.model.predict(X_seq, verbose=0)
+        
+        predictions = self.y_scaler.inverse_transform(predictions_scaled.reshape(-1, 1))
+        
+        # align y_true with the actual sequences used 
+        y_true = y[self.sequence_length:].reshape(-1, 1)
+        
         return {
             "y_true": y_true.flatten(),
-            "y_pred": predictions.flatten()
+            "y_pred": predictions.flatten(),
+            "dates": df_test["date"].iloc[self.sequence_length:] .values
         }
-
+        
+    print(f"Prediction range: {predictions.min():.4f} — {predictions.max():.4f}")
+    print(f"Actual range: {y_true.min():.4f} — {y_true.max():.4f}") 
     # =====================================================
     # EVALUATE
     # =====================================================

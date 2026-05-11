@@ -104,7 +104,10 @@ def train_models(df):
         m = LSTMForecaster()
         m.fit(train_df)
         pred_dict = m.predict(test_df)   # returns dict
-        metrics = evaluate_prediction_dict(pred_dict)
+        metrics = compute_all_metrics(
+            np.array(pred_dict["y_true"]),
+            np.array(pred_dict["y_pred"])
+        )
         m.metrics = metrics
         results.append({"model": "LSTM", **metrics})
         logger.info(f"LSTM Metrics: {metrics}")

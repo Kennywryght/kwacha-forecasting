@@ -13,7 +13,9 @@ def compute_mae(actual: np.ndarray, predicted: np.ndarray) -> float:
 def compute_mape(actual: np.ndarray, predicted: np.ndarray) -> float:
     actual    = np.array(actual, dtype=float)
     predicted = np.array(predicted, dtype=float)
-    mask = actual > 0
+    mask = actual > 1e-8 # Avoid division by zero
+    if np.sum(mask) == 0:
+        return np.nan # All actual values are zero, MAPE is undefined
     return float(np.mean(np.abs((actual[mask] - predicted[mask]) / actual[mask])) * 100)
 
 
