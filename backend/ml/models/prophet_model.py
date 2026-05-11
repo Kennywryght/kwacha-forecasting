@@ -5,118 +5,118 @@ import numpy as np
 import pandas as pd
 
 from prophet import Prophet
+
 from ml.models.base_model import BaseForecaster
 from ml.utils.metrics import compute_all_metrics
 from core.logging_config import get_logger
 
 warnings.filterwarnings("ignore")
+
 logger = get_logger(__name__)
 
 
 class ProphetForecaster(BaseForecaster):
 
     def __init__(self):
+
         super().__init__("prophet")
+
         self.model = None
-        self.last_date = None
+
         self.metrics = {}
 
     # =====================================================
-    # DATA PREPARATION
+    # PREPARE DATA
     # =====================================================
-    def _prepare_prophet_data(self, df):
+
+    def prepare_data(self, df):
+
         df = df.copy()
 
+        df["date"] = pd.to_datetime(df["date"])
+
+        df = df.sort_values("date")
+
         prophet_df = pd.DataFrame()
-        prophet_df["ds"] = pd.to_datetime(df["date"])
 
-        if "rate" in df.columns:
-            prophet_df["y"] = df["rate"]
-        elif "usd_mwk" in df.columns:
-            prophet_df["y"] = df["usd_mwk"]
-        else:
-            raise ValueError("Target column not found")
+        prophet_df["ds"] = df["date"]
 
-        prophet_df["y"] = (
-            prophet_df["y"]
-            .astype(float)
-            .replace([np.inf, -np.inf], np.nan)
-            .ffill()
-            .bfill()
+        prophet_df["y"] = df["rate"].astype(float)
+
+        prophet_df = prophet_df.replace(
+            [np.inf, -np.inf],
+            np.nan
         )
 
-        prophet_df["y"] = prophet_df["y"].clip(
-            lower=prophet_df["y"].quantile(0.01),
-            upper=prophet_df["y"].quantile(0.99),
-        )
+        prophet_df = prophet_df.ffill().bfill()
 
-        return prophet_df.dropna().reset_index(drop=True)
+        prophet_df = prophet_df.dropna()
+
+        return prophet_df
 
     # =====================================================
     # TRAIN
     # =====================================================
+
     def fit(self, df):
 
-        logger.info(" Prophet training started")
+        logger.info("🚀 Training Prophet...")
 
-        df = self._clean_dataframe(df)
-        df = df[["date", "rate"]].copy()
-        df = df.rename(columns={"date": "ds", "rate": "y"})
-        df = df.sort_values("ds")
+        df = self.prepare_data(df)
 
-        if len(df) < 100:
-            raise ValueError("Not enough data for Prophet")
+        split_idx = int(len(df) * 0.9)
 
-        self.last_date = df["ds"].iloc[-1]
+        train_df = df.iloc[:split_idx]
 
-        eval_size = min(60, int(len(df) * 0.1))
-
-        train_df = df[:-eval_size]
-        test_df = df[-eval_size:]
+        test_df = df.iloc[split_idx:]
 
         eval_model = Prophet(
-            yearly_seasonality=True,
-            weekly_seasonality=True,
+            yearly_seasonality=False,
+            weekly_seasonality=False,
             daily_seasonality=False,
-            changepoint_prior_scale=0.05
+            changepoint_prior_scale=0.001
         )
 
         eval_model.fit(train_df)
 
         future = eval_model.make_future_dataframe(
-            periods=eval_size,
+            periods=len(test_df),
             freq="D"
         )
 
         forecast = eval_model.predict(future)
 
-        preds = forecast["yhat"].tail(eval_size).values
+        preds = forecast["yhat"].tail(len(test_df)).values
+
         actual = test_df["y"].values
 
-        self.metrics = compute_all_metrics(actual, preds)
+        self.metrics = compute_all_metrics(
+            actual,
+            preds
+        )
 
-        # retrain full model
+        # retrain on full data
         self.model = Prophet(
             yearly_seasonality=False,
             weekly_seasonality=False,
             daily_seasonality=False,
             changepoint_prior_scale=0.001
         )
+
         self.model.fit(df)
 
         self.is_fitted = True
 
-        logger.info(" Prophet training complete")
+        logger.info("✅ Prophet training complete")
 
     # =====================================================
-    # FORECAST
+    # PREDICT
     # =====================================================
+
     def predict(self, horizon):
 
         if not self.is_fitted:
-            raise RuntimeError("Prophet model not fitted")
-
-        horizon = int(horizon)
+            raise RuntimeError("Model not fitted")
 
         future = self.model.make_future_dataframe(
             periods=horizon,
@@ -124,42 +124,46 @@ class ProphetForecaster(BaseForecaster):
         )
 
         forecast = self.model.predict(future)
+
         forecast = forecast.tail(horizon)
 
-        dates = forecast["ds"].tolist()
-        predicted = forecast["yhat"].values
-        lower = forecast["yhat_lower"].values
-        upper = forecast["yhat_upper"].values
-
         return {
-            "dates": dates,
-            "predicted": predicted,
-            "lower": lower,
-            "upper": upper
+            "dates": forecast["ds"].tolist(),
+            "predicted": forecast["yhat"].tolist(),
+            "lower": forecast["yhat_lower"].tolist(),
+            "upper": forecast["yhat_upper"].tolist()
         }
 
     # =====================================================
-    # SAVE / LOAD
+    # SAVE
     # =====================================================
+
     def save(self, path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        os.makedirs(
+            os.path.dirname(path),
+            exist_ok=True
+        )
 
         with open(path, "wb") as f:
+
             pickle.dump({
                 "model": self.model,
-                "last_date": self.last_date,
-                "metrics": self.metrics,
+                "metrics": self.metrics
             }, f)
 
-        logger.info(f"✅ Prophet saved → {path}")
+    # =====================================================
+    # LOAD
+    # =====================================================
 
     def load(self, path):
+
         with open(path, "rb") as f:
+
             data = pickle.load(f)
 
         self.model = data["model"]
-        self.last_date = data["last_date"]
-        self.metrics = data["metrics"]
-        self.is_fitted = True
 
-        logger.info(f"✅ Prophet loaded ← {path}")
+        self.metrics = data["metrics"]
+
+        self.is_fitted = True
