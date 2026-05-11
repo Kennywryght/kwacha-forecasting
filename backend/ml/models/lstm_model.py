@@ -26,7 +26,7 @@ random.seed(SEED)
 
 
 class LSTMForecaster:
-    def __init__(self, sequence_length=10):
+    def __init__(self, sequence_length=30):
         self.sequence_length = sequence_length
         self.model = None
         self.x_scaler = MinMaxScaler()
@@ -119,9 +119,9 @@ class LSTMForecaster:
             raise ValueError("Sequence creation failed. Dataset too small.")
         logger.info(f"LSTM training sequences: {X_seq.shape}")
         self.model = self.build_model((X_seq.shape[1], X_seq.shape[2]))
-        early_stop = EarlyStopping(monitor="val_loss", patience=5,
+        early_stop = EarlyStopping(monitor="val_loss", patience=3,
                                    restore_best_weights=True)
-        self.model.fit(X_seq, y_seq, epochs=50, batch_size=16,
+        self.model.fit(X_seq, y_seq, epochs=20, batch_size=16,
                        validation_split=0.2, verbose=1,
                        callbacks=[early_stop])
         self.is_fitted = True

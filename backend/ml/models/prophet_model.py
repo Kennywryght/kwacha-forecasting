@@ -85,7 +85,7 @@ class ProphetForecaster(BaseForecaster):
 
         future = eval_model.make_future_dataframe(
             periods=eval_size,
-            freq="B"
+            freq="D"
         )
 
         forecast = eval_model.predict(future)
@@ -98,9 +98,9 @@ class ProphetForecaster(BaseForecaster):
         # retrain full model
         self.model = Prophet(
             yearly_seasonality=True,
-            weekly_seasonality=True,
+            weekly_seasonality=False,
             daily_seasonality=False,
-            changepoint_prior_scale=0.05
+            changepoint_prior_scale=0.01
         )
         self.model.fit(df)
 
@@ -120,7 +120,7 @@ class ProphetForecaster(BaseForecaster):
 
         future = self.model.make_future_dataframe(
             periods=horizon,
-            freq="B"
+            freq="D"
         )
 
         forecast = self.model.predict(future)
