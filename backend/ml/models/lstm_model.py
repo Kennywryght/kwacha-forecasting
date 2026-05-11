@@ -119,7 +119,7 @@ class LSTMForecaster:
             Dropout(0.25),
             LSTM(32, return_sequences=False),
             Dropout(0.5),
-            Dense(16, activation="relu")
+            Dense(16, activation="relu"),
             Dense(1)
         ])
 
