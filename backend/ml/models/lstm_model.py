@@ -76,7 +76,7 @@ class LSTMForecaster:
         df = df.copy()
         
         # using the pipeline's powerful feature engineer
-        df, _ = engineer_features(df)
+        df= engineer_features(df)
         
         #drop non-numeric columns
         exclude_cols = ['date', 'rate']
@@ -158,15 +158,15 @@ class LSTMForecaster:
 
         early_stop = EarlyStopping(
             monitor="val_loss",
-            patience=5,
+            patience=7,
             restore_best_weights=True
         )
 
         self.model.fit(
             X_seq,
             y_seq,
-            epochs=20,
-            batch_size=16,
+            epochs=30,
+            batch_size=32,
             validation_split=0.2,
             callbacks=[early_stop],
             verbose=1
@@ -199,12 +199,11 @@ class LSTMForecaster:
         predictions = self.y_scaler.inverse_transform(predictions_scaled.reshape(-1, 1))
         
         # align y_true with the actual sequences used 
-        y_true = y[self.sequence_length:].reshape(-1, 1)
+        y_true = y[self.sequence_length:].flatten()
         
         return {
-            "y_true": y_true.flatten(),
-            "y_pred": predictions.flatten(),
-            "dates": df_test["date"].iloc[self.sequence_length:] .values
+            "y_true": y_true,
+            "y_pred": predictions.flatten()
         }
         
     # =====================================================
