@@ -97,10 +97,10 @@ class ProphetForecaster(BaseForecaster):
 
         # retrain full model
         self.model = Prophet(
-            yearly_seasonality=True,
+            yearly_seasonality=False,
             weekly_seasonality=False,
             daily_seasonality=False,
-            changepoint_prior_scale=0.01
+            changepoint_prior_scale=0.001
         )
         self.model.fit(df)
 

@@ -71,8 +71,15 @@ class LSTMForecaster:
     def fit_preprocess(self, df):
         df, _ = self.clean_dataframe(df)
         
-        # use rate itself as a feature 
-        X = df["rate"].values.reshape(-1, 1)
+        # use previous rate values as feature 
+        df["lag_1"] = df["rate"].shift(1)
+        df["lag_2"] = df["rate"].shift(2)
+        df["lag_3"] = df["rate"].shift(3)
+        
+        df = df.dropna()
+        
+        self.feature_columns = ["lag_1", "lag_2", "lag_3"]
+        X = df[self.feature_columns].values
         y = df["rate"].values.reshape(-1, 1)
         
         X_scaled = self.x_scaler.fit_transform(X)
@@ -85,7 +92,14 @@ class LSTMForecaster:
     # ---------------------------------------------------
     def transform_preprocess(self, df):
         df, dates = self.clean_dataframe(df)
-        X = df["rate"].values.reshape(-1, 1)
+        
+        df["lag_1"] = df["rate"].shift(1)
+        df["lag_2"] = df["rate"].shift(2)
+        df["lag_3"] = df["rate"].shift(3)
+        
+        df = df.dropna()
+        
+        X = df[self.feature_columns].values
         y = df["rate"].values.reshape(-1, 1)
         X_scaled = self.x_scaler.transform(X)
         y_scaled = self.y_scaler.transform(y)
@@ -96,16 +110,22 @@ class LSTMForecaster:
     # ---------------------------------------------------
     def build_model(self, input_shape):
         model = Sequential()
-        model.add(LSTM(32, return_sequences=True,
-                       kernel_regularizer=l2(0.001),
-                       input_shape=input_shape))
-        model.add(Dropout(0.3))
-        model.add(LSTM(16, kernel_regularizer=l2(0.001)))
-        model.add(Dropout(0.3))
-        model.add(Dense(8, activation='relu', kernel_regularizer=l2(0.001)))
+        model.add(
+            LSTM(
+                16,
+                input_shape= input_shape,
+                return_sequences=False
+                )
+            )
+        model.add(Dropout(0.1))
+        
+        model.add(Dense(8, activation='relu'))
         model.add(Dense(1))
-        optimizer = Adam(learning_rate=0.0005, clipnorm=1.0)
-        model.compile(optimizer=optimizer, loss='mse')
+        optimizer = Adam(learning_rate=0.0001)
+        model.compile(
+            optimizer=optimizer, 
+            loss='mse'
+        )
         return model
 
     # ---------------------------------------------------
