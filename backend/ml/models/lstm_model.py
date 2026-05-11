@@ -137,7 +137,8 @@ class LSTMForecaster:
         X_seq, y_seq = self.create_sequences(X_scaled, y_scaled)
         predictions_scaled = self.model.predict(X_seq)
         predictions = self.y_scaler.inverse_transform(predictions_scaled)
-        y_true = self.y_scaler.inverse_transform(y_seq)
+        y_true = self.y_scaler.inverse_transform(
+            y_seq.reshape(-1, 1))
         return {"y_true": y_true.flatten().tolist(),
                 "y_pred": predictions.flatten().tolist()}
 

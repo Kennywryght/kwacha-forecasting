@@ -82,8 +82,8 @@ def train_models(df):
         m.fit(train_df)
         pred_df = m.predict(len(test_df))
         prophet_pred = {
-            "y_true": test_df["rate"].values,
-            "y_pred": pred_df["predicted"].values
+            "y_true": test_df["rate"].values.tolist(),
+            "y_pred": pred_df["predicted"]
         }
         metrics = evaluate_prediction_dict(prophet_pred)
         
