@@ -207,8 +207,6 @@ class LSTMForecaster:
             "dates": df_test["date"].iloc[self.sequence_length:] .values
         }
         
-    print(f"Prediction range: {predictions.min():.4f} — {predictions.max():.4f}")
-    print(f"Actual range: {y_true.min():.4f} — {y_true.max():.4f}") 
     # =====================================================
     # EVALUATE
     # =====================================================
