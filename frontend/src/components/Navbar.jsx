@@ -1,52 +1,95 @@
-import React from "react";
+import React, { useState } from "react";
+import { useLanguage } from "../context/LanguageContext";
 import { Link, useLocation } from "react-router-dom";
 
 export default function Navbar() {
   const { pathname } = useLocation();
+  const [open, setOpen] = useState(false);
+
+  const { lang, setLang } = useLanguage();
 
   const links = [
-    { to: "/", label: "Dashboard" },
-    { to: "/history", label: "History" },
-    { to: "/models", label: "Models" },
-    { to: "/api-docs", label: "API Docs" },       // internal custom page
+    { to: "/home", label: lang === "ny" ? "Kunyumba" : "Home" },
+    { to: "/", label: lang === "ny" ? "Dashibodi" : "Dashboard" },
+    { to: "/history", label: lang === "ny" ? "Mbiri" : "History" },
+    { to: "/models", label: lang === "ny" ? "Ma Model" : "Models" },
+    { to: "/api-docs", label: "API Docs" },
+    { to: "/about", label: lang === "ny" ? "Za ife" : "About" },
   ];
 
-  const activeStyle = "text-blue-600 font-bold px-3 py-1 rounded-full hover:bg-blue-50";
-  const inactiveStyle = "text-gray-500 font-medium px-3 py-1 rounded-full hover:text-gray-700";
+  const active =
+    "text-blue-400 font-semibold px-3 py-1 rounded-md";
+  const inactive =
+    "text-slate-300 hover:text-white px-3 py-1 rounded-md";
 
   return (
-    <nav className="bg-white border-b border-gray-200 px-6 py-4">
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <h1 className="text-2xl font-bold text-blue-900 tracking-tight">
-            KwachaCast
-          </h1>
-          <div className="hidden md:flex items-center gap-4">
-            {links.map((link) => (
-              <Link
-                key={link.to}
-                to={link.to}
-                className={pathname === link.to ? activeStyle : inactiveStyle}
-              >
-                {link.label}
-              </Link>
-            ))}
-          </div>
-        </div>
+    <nav className="bg-slate-900 border-b border-slate-700 px-4 py-3">
 
-        {/* Mobile Menu */}
-        <div className="flex gap-4 md:hidden">
-          {links.map((link) => (
+      <div className="flex items-center justify-between">
+
+        {/* BRAND */}
+        <h1 className="text-xl font-bold text-white">
+          KwachaCast
+        </h1>
+
+        {/* DESKTOP LINKS */}
+        <div className="hidden md:flex items-center gap-3">
+
+          {links.map(l => (
             <Link
-              key={link.to}
-              to={link.to}
-              className="text-gray-500 text-sm"
+              key={l.to}
+              to={l.to}
+              className={pathname === l.to ? active : inactive}
             >
-              {link.label}
+              {l.label}
             </Link>
           ))}
+
+          {/* ✅ LANGUAGE TOGGLE BUTTON (THIS IS WHERE IT GOES) */}
+          <button
+            onClick={() => setLang(lang === "en" ? "ny" : "en")}
+            className="text-xs px-3 py-1 bg-slate-700 rounded-md text-white ml-2"
+          >
+            {lang === "en" ? "NY" : "EN"}
+          </button>
+
         </div>
+
+        {/* MOBILE BUTTON */}
+        <button
+          onClick={() => setOpen(!open)}
+          className="md:hidden text-slate-300"
+        >
+          ☰
+        </button>
       </div>
+
+      {/* MOBILE MENU */}
+      {open && (
+        <div className="md:hidden mt-3 flex flex-col gap-2">
+
+          {links.map(l => (
+            <Link
+              key={l.to}
+              to={l.to}
+              onClick={() => setOpen(false)}
+              className="text-slate-300 hover:text-white px-2 py-1"
+            >
+              {l.label}
+            </Link>
+          ))}
+
+          {/* MOBILE LANGUAGE BUTTON */}
+          <button
+            onClick={() => setLang(lang === "en" ? "ny" : "en")}
+            className="text-xs px-3 py-1 bg-slate-700 rounded-md text-white w-fit mt-2"
+          >
+            {lang === "en" ? "NY" : "EN"}
+          </button>
+
+        </div>
+      )}
+
     </nav>
   );
 }

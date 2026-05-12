@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../backend"))
 
 import pandas as pd
 import numpy as np
-from ml.pipeline.loader import load_raw_csv
+from ml.pipeline.loader import load_csv
 from ml.pipeline.cleaner import clean_data
 from ml.pipeline.feature_engineer import engineer_features
 from ml.pipeline.db_seeder import seed_exchange_rates, seed_macro_indicators
