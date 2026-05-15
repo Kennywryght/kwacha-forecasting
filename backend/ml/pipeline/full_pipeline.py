@@ -1,8 +1,11 @@
+# backend/ml/pipeline/full_pipeline.py
 import logging
 import os
 import pandas as pd
 import numpy as np
 
+from ml.pipeline.live_fetcher import fetch_latest_data
+from ml.pipeline.db_seeder import save_to_db
 from ml.pipeline.loader import load_data
 from ml.pipeline.cleaner import clean_data
 from ml.pipeline.gap_filler import fill_gaps
@@ -10,34 +13,59 @@ from ml.pipeline.feature_engineer import engineer_features
 from ml.utils.trainer import train_models
 from ml.utils.tuner import (tune_arima_auto, tune_arimax_auto, tune_prophet, tune_lstm)
 from ml.utils.explainability import run_explainability
+from db.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
 
 def run_full_pipeline():
     logger.info("="*60)
-    logger.info("FULL PIPELINE: base training + hyperparameter tuning + explainability")
+    logger.info("FULL PIPELINE: data update + base training + tuning + explainability")
     logger.info("="*60)
 
-    # ---- 1. Load and preprocess data ----
+    # ---- 1. Fetch latest data (non‑blocking) ----
+    logger.info("📡 Fetching latest data...")
+    try:
+        raw_data = fetch_latest_data()
+        if raw_data is not None:
+            db = SessionLocal()
+            save_to_db(db, raw_data)
+            db.close()
+    except Exception as e:
+        logger.warning(f"⚠️ Live fetch failed: {e}")
+
+    # ---- 2. Load data (DB → CSV fallback) ----
+    logger.info("📂 Loading dataset...")
     df = load_data("db")
-    if df is None or df.empty:
+    MIN_ROWS = 1000
+    if df is None or df.empty or len(df) < MIN_ROWS:
+        logger.warning(f"⚠️ DB insufficient → using CSV")
         df = load_data("csv")
+
     if df is None or df.empty:
-        logger.error("No data available")
+        logger.error("❌ No data available")
         return
 
+    logger.info(f"✅ Data loaded: {df.shape}")
+
+    # ---- 3. Preprocess if necessary ----
     if len(df.columns) < 10:   # not yet engineered
+        logger.info("🧹 Cleaning, filling gaps, engineering features...")
         df = clean_data(df)
         df = fill_gaps(df)
         df = engineer_features(df)
+
+    if df is None or df.empty:
+        logger.error("❌ Data empty after preprocessing")
+        return
+
     logger.info(f"Data ready: {df.shape}")
 
-    # ---- 2. Base model training (saves best_model.pkl) ----
+    # ---- 4. Base model training (saves best_model.pkl) ----
     logger.info("Step 1/3: Training base models...")
-    train_models(df)   # already saves best model
+    train_models(df)
 
-    # ---- 3. Hyperparameter tuning ----
+    # ---- 5. Hyperparameter tuning ----
     logger.info("Step 2/3: Hyperparameter tuning...")
     tuning_results = {}
     try:
@@ -60,16 +88,16 @@ def run_full_pipeline():
     import json
     os.makedirs("outputs/metrics", exist_ok=True)
     with open("outputs/metrics/tuning_results.json", "w") as f:
-        # Serialise only basic types
         clean_results = {}
         for k, v in tuning_results.items():
             if isinstance(v, dict):
-                clean_results[k] = {kk: vv for kk, vv in v.items() if not callable(vv) and type(vv) in [int, float, str, list, dict, tuple, bool]}
+                clean_results[k] = {kk: vv for kk, vv in v.items()
+                                    if not callable(vv) and type(vv) in [int, float, str, list, dict, tuple, bool]}
         json.dump(clean_results, f, indent=2, default=str)
-    logger.info(f"Tuning results saved to outputs/metrics/tuning_results.json")
+    logger.info("Tuning results saved.")
 
-    # ---- 4. Explainability ----
+    # ---- 6. Explainability ----
     logger.info("Step 3/3: Explainability on best base model...")
-    run_explainability(df)
+    run_explainability(df, method="permutation")   # or "shap"
 
     logger.info("Full pipeline completed. All outputs in 'outputs/' and 'ml/artifacts/'.")
