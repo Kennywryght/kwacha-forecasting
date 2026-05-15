@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import joblib  # new import for model persistence
 
 from ml.models.arima_model import ARIMAForecaster
 from ml.models.arimax_model import ARIMAXForecaster
@@ -12,7 +13,7 @@ from ml.models.prophet_model import ProphetForecaster
 from ml.models.lstm_model import LSTMForecaster
 from ml.utils.io_utils import ensure_dirs
 from ml.utils.metrics import compute_all_metrics
-from ml.utils.evaluation import (          # <-- new evaluation helpers
+from ml.utils.evaluation import (
     evaluate_prediction_dict,
     evaluate_prediction_dataframe
 )
@@ -49,6 +50,12 @@ def train_models(df):
     train_df, test_df = time_series_split(df)
     results = []          # will hold dicts only for successful models
 
+    # ---- Model objects (will hold the last successfully trained instance of each) ----
+    arima_model = None
+    arimax_model = None
+    prophet_model = None
+    lstm_model = None
+
     # ---------- ARIMA ----------
     try:
         logger.info("Training ARIMA...")
@@ -58,6 +65,7 @@ def train_models(df):
         metrics = evaluate_prediction_dict(pred)
         m.metrics = metrics
         results.append({"model": "ARIMA", **metrics})
+        arima_model = m   # save object
         logger.info(f"ARIMA Metrics: {metrics}")
     except Exception as e:
         logger.exception(f"ARIMA failed: {e}")
@@ -71,6 +79,7 @@ def train_models(df):
         metrics = evaluate_prediction_dict(pred)
         m.metrics = metrics
         results.append({"model": "ARIMAX", **metrics})
+        arimax_model = m
         logger.info(f"ARIMAX Metrics: {metrics}")
     except Exception as e:
         logger.exception(f"ARIMAX failed: {e}")
@@ -86,15 +95,13 @@ def train_models(df):
             "y_pred": pred_df["predicted"]
         }
         metrics = evaluate_prediction_dict(prophet_pred)
-        
         m.metrics = metrics
-        
         results.append({
-            "model": "Prophet", 
+            "model": "Prophet",
             **metrics
         })
+        prophet_model = m
         logger.info(f"Prophet Metrics: {metrics}")
-        
     except Exception as e:
         logger.exception(f"Prophet failed: {e}")
 
@@ -110,6 +117,7 @@ def train_models(df):
         )
         m.metrics = metrics
         results.append({"model": "LSTM", **metrics})
+        lstm_model = m
         logger.info(f"LSTM Metrics: {metrics}")
     except Exception as e:
         logger.exception(f"LSTM failed: {e}")
@@ -120,7 +128,7 @@ def train_models(df):
 
     results_df = pd.DataFrame(results).sort_values("rmse")
 
-    # Save & plot
+    # Save comparison CSV and plot (existing)
     results_df.to_csv(os.path.join(OUTPUT_DIR, "model_comparison.csv"), index=False)
 
     plt.figure(figsize=(8, 5))
@@ -130,6 +138,21 @@ def train_models(df):
     plt.tight_layout()
     plt.savefig(os.path.join(PLOT_DIR, "comparison.png"))
     plt.close()
+
+    # ---- Save the best model object ----
+    best_model_name = results_df.iloc[0]["model"]
+    model_map = {
+        "ARIMA": arima_model,
+        "ARIMAX": arimax_model,
+        "Prophet": prophet_model,
+        "LSTM": lstm_model
+    }
+    best_model_obj = model_map.get(best_model_name)
+    if best_model_obj is not None:
+        joblib.dump(best_model_obj, os.path.join(MODEL_DIR, "best_model.pkl"))
+        logger.info(f"Best model '{best_model_name}' saved to best_model.pkl")
+    else:
+        logger.warning(f"Could not retrieve best model object for {best_model_name}")
 
     best = results_df.iloc[0]
     print("\n🏆 BEST MODEL:")
