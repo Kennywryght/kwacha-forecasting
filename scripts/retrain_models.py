@@ -12,13 +12,20 @@ else:
     print("💻 Running locally")
 
 # ---------------------------------------------------------
-# 🧠 PATH SETUP
+# 🧠 PATH SETUP (FIXES: No module named 'ml')
 # ---------------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(SCRIPT_DIR)
+BACKEND_DIR = os.path.join(ROOT_DIR, 'backend')
 
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+# Add both root and backend so that imports like 'backend.ml' and 'ml' work
+for d in [ROOT_DIR, BACKEND_DIR]:
+    if d not in sys.path:
+        sys.path.insert(0, d)
+
+print(f"DEBUG: ROOT_DIR = {ROOT_DIR}")
+print(f"DEBUG: BACKEND_DIR = {BACKEND_DIR}")
+print(f"DEBUG: sys.path has backend = {BACKEND_DIR in sys.path}")
 
 # ---------------------------------------------------------
 # 📁 MODEL SAVE LOCATION
