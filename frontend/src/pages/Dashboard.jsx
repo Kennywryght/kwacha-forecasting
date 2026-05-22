@@ -15,7 +15,7 @@ import {
   ReferenceLine,
   Area,
   ComposedChart,
-  Legend,               // ← added
+  Legend,
 } from "recharts";
 import {
   AlertCircle,
@@ -190,7 +190,7 @@ function FanChart({ forecasts, history, horizon }) {
             stroke="#64748b"
             strokeDasharray="3 3"
           />
-          <Legend />                    {/* ← added */}
+          <Legend />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -411,8 +411,9 @@ export default function Dashboard() {
                 <p className="text-slate-400 text-xs uppercase tracking-wider">
                   {t("Current Rate", "Mtengo Wapano")}
                 </p>
+                {/* 👇 Changed to 2 decimal places */}
                 <p className="text-3xl font-bold text-white mt-1">
-                  {latestRate.rate.toFixed(4)}
+                  {latestRate.rate.toFixed(2)}
                 </p>
                 <p className="text-slate-500 text-xs">{latestRate.date}</p>
               </div>

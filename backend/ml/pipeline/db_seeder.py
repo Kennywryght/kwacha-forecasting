@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from db.database import SessionLocal, create_all_tables
 from db.models import ExchangeRate, MacroIndicator

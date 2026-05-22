@@ -167,3 +167,15 @@ class ProphetForecaster(BaseForecaster):
         self.metrics = data["metrics"]
 
         self.is_fitted = True
+        
+    def refit(self, df):
+        """Refit the model on new data."""
+        prophet_df = self.prepare_data(df)
+        self.model = Prophet(
+            yearly_seasonality=False,
+            weekly_seasonality=False,
+            daily_seasonality=False,
+            changepoint_prior_scale=0.001
+        )
+        self.model.fit(prophet_df)
+        self.is_fitted = True

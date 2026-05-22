@@ -142,6 +142,40 @@ class ARIMAForecaster(BaseForecaster):
             "y_pred": preds
         }
 
+    # ... (inside ARIMAForecaster class, after predict method)
+
+    def forecast(self, horizon: int):
+        """
+        Forecast 'horizon' steps ahead from the last fitted date.
+        Returns a dict with keys: dates (list of date objects),
+        predicted (list of floats), lower_bound, upper_bound (optional).
+        """
+        if not self.is_fitted:
+            raise RuntimeError("ARIMA not fitted")
+
+        # Generate future predictions
+        fc = self.fitted_model.get_forecast(steps=horizon)
+        pred_mean = fc.predicted_mean
+        conf_int = fc.conf_int()
+        
+        #conf_int can be DataFrame or numpy array
+        if isinstance(conf_int, pd.DataFrame):
+            lower = conf_int.iloc[:, 0].tolist()
+            upper = conf_int.iloc[:, 1].tolist()
+        else:
+            lower = conf_int[:, 0].tolist()
+            upper = conf_int[:, 1].tolist()
+
+        # Create future dates starting from the day after last_date
+        start = pd.Timestamp(self.last_date) + pd.Timedelta(days=1)
+        future_dates = [(start + pd.Timedelta(days=i)) for i in range(horizon)]
+
+        return {
+            "dates": future_dates,
+            "predicted": pred_mean.tolist(),
+            "lower_bound": lower,
+            "upper_bound": upper,
+        }
     # -----------------------------
     def save(self, path):
         os.makedirs(os.path.dirname(path), exist_ok=True)

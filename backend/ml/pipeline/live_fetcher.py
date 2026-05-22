@@ -106,3 +106,35 @@ def fetch_latest_data() -> pd.DataFrame:
 
     # 3. Fail gracefully
     raise ValueError("❌ All exchange rate sources failed.")
+
+
+# ── NEW: Lightweight live fetcher for the /rates/latest endpoint ──
+def fetch_current_rate() -> dict | None:
+    """
+    Fetch only today's MWK/USD rate from fast, free APIs.
+    Returns {"date": "YYYY-MM-DD", "rate": float} or None if all fail.
+    """
+    # Primary: open.er-api (no API key, extremely fast)
+    try:
+        r = requests.get("https://open.er-api.com/v6/latest/USD", timeout=10)
+        data = r.json()
+        if data.get("result") == "success" and "MWK" in data["rates"]:
+            rate = data["rates"]["MWK"]
+            logger.info(f"✅ Live rate from open.er-api: {rate}")
+            return {"date": datetime.today().strftime("%Y-%m-%d"), "rate": rate}
+    except Exception as e:
+        logger.warning(f"⚠️ open.er-api failed: {e}")
+
+    # Fallback: exchangerate.host latest endpoint
+    try:
+        r = requests.get("https://api.exchangerate.host/latest?base=USD&symbols=MWK", timeout=10)
+        data = r.json()
+        if data.get("success") and "MWK" in data["rates"]:
+            rate = data["rates"]["MWK"]
+            logger.info(f"✅ Live rate from exchangerate.host: {rate}")
+            return {"date": datetime.today().strftime("%Y-%m-%d"), "rate": rate}
+    except Exception as e:
+        logger.warning(f"⚠️ exchangerate.host latest failed: {e}")
+
+    logger.error("❌ All live rate sources failed")
+    return None
