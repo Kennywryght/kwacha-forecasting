@@ -13,64 +13,68 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+# ── Helper to find CSV (works locally + in Colab) ──────────────────────
+def _find_csv(filename: str) -> str:
+    """
+    Search for a CSV file in multiple possible locations:
+    1. Relative to the loader file (local dev)
+    2. Absolute path in /content/kwacha-forecasting (Colab)
+    3. Current working directory (Colab fallback)
+    """
+    # Try relative to this file (local machine)
+    base = os.path.dirname(__file__)
+    local_path = os.path.abspath(os.path.join(base, "..", "..", "..", "..", "data", filename))
+    if os.path.exists(local_path):
+        return local_path
+
+    # Try Colab mounted drive / typical location
+    colab_path = os.path.abspath(f"/content/kwacha-forecasting/data/{filename}")
+    if os.path.exists(colab_path):
+        return colab_path
+
+    # Try current working directory
+    cwd_path = os.path.abspath(os.path.join(os.getcwd(), "data", filename))
+    if os.path.exists(cwd_path):
+        return cwd_path
+
+    return None
+
+
 def load_processed_csv() -> pd.DataFrame:
     """
-    Load already cleaned + feature-engineered dataset
+    Load already cleaned + feature-engineered dataset, or fallback to raw CSV.
     """
-    path = os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            "../../../../data/processed/mwk_usd_clean.csv"
-        )
-    )
-
-    logger.info(f"📂 Loading PROCESSED CSV: {path}")
-
-    if not os.path.exists(path):
-        logger.warning("⚠️ Processed CSV not found, falling back to raw dataset...")
-
-        raw_path = os.path.abspath(
-            os.path.join(
-                os.path.dirname(__file__),
-                "../../../../data/raw/mwk_usd_final_dataset.csv"
-            )
-        )
-
-        if not os.path.exists(raw_path):
-            raise FileNotFoundError("❌ No dataset found (processed or raw)")
-
-        df = pd.read_csv(raw_path, parse_dates=["Date"])
-        df.rename(columns={"Date": "date", "MWK_USD": "rate"}, inplace=True)
-
+    processed_path = _find_csv("processed/mwk_usd_clean.csv")
+    if processed_path:
+        logger.info(f"📂 Loading PROCESSED CSV: {processed_path}")
+        df = pd.read_csv(processed_path)
+        if "date" not in df.columns:
+            raise ValueError("❌ Processed CSV must contain 'date' column")
         df["date"] = pd.to_datetime(df["date"])
         df.sort_values("date", inplace=True)
         df.reset_index(drop=True, inplace=True)
-
-        df["is_preprocessed"] = False
+        df["is_preprocessed"] = True
+        logger.info(f"✅ Loaded {len(df)} rows from processed dataset")
         return df
 
-    df = pd.read_csv(path)
+    # Fallback to raw CSV
+    raw_path = _find_csv("raw/mwk_usd_final_dataset.csv")
+    if not raw_path:
+        raise FileNotFoundError("❌ No dataset found (processed or raw)")
 
-    if "date" not in df.columns:
-        raise ValueError("❌ Processed CSV must contain 'date' column")
-
+    logger.info(f"📂 Loading RAW CSV: {raw_path}")
+    df = pd.read_csv(raw_path, parse_dates=["Date"])
+    df.rename(columns={"Date": "date", "MWK_USD": "rate"}, inplace=True)
     df["date"] = pd.to_datetime(df["date"])
     df.sort_values("date", inplace=True)
     df.reset_index(drop=True, inplace=True)
-
-    # 🔥 IMPORTANT FLAG
-    df["is_preprocessed"] = True
-
-    logger.info(f"✅ Loaded {len(df)} rows from processed dataset")
-
+    df["is_preprocessed"] = False
     return df
 
 
 def load_data(source: str = "db") -> pd.DataFrame:
-
     if source == "db":
         db = SessionLocal()
-
         try:
             rates = (
                 db.query(ExchangeRate)
@@ -78,7 +82,6 @@ def load_data(source: str = "db") -> pd.DataFrame:
                 .order_by(ExchangeRate.date.asc())
                 .all()
             )
-
             rates_df = pd.DataFrame([{
                 "date": r.date,
                 "rate": r.rate,
@@ -93,7 +96,6 @@ def load_data(source: str = "db") -> pd.DataFrame:
                 return pd.DataFrame()
 
             macros = db.query(MacroIndicator).all()
-
             macro_df = pd.DataFrame([{
                 "date": m.date,
                 "Inflation": m.inflation,
@@ -120,11 +122,8 @@ def load_data(source: str = "db") -> pd.DataFrame:
             df["date"] = pd.to_datetime(df["date"])
             df.sort_values("date", inplace=True)
             df.reset_index(drop=True, inplace=True)
-
-            df["is_preprocessed"] = False  # DB always needs processing
-
+            df["is_preprocessed"] = False
             return df
-
         finally:
             db.close()
 
