@@ -25,14 +25,12 @@ def set_models(models: dict):
 
 
 def _safe_date(d):
-    """Convert Timestamp or datetime to date."""
     if hasattr(d, 'date'):
         return d.date()
     return d
 
 
 def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
-    """Ensure forecasts start from start_date and limit to horizon points."""
     dates = raw.get("dates", [])
     predicted = raw.get("predicted", [])
     lower = raw.get("lower_bound", []) or raw.get("lower", [])
@@ -59,9 +57,49 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
         }
 
 
-# ── Prophet helpers ────────────────────────────────────────────────────
+# ── ARIMA light refit ──────────────────────────────────────────────────
+def _refresh_arima(db: Session):
+    """
+    Re‑fit the ARIMA model on all available rates using its already‑tuned order.
+    This brings its internal state up to today without a full hyperparameter search.
+    """
+    if "arima" not in _models:
+        return
+    arima = _models["arima"]
+    rates = crud.get_all_rates_as_dataframe(db)
+    if rates.empty:
+        raise HTTPException(status_code=500, detail="No rate data for ARIMA")
+    # Use the order that was already determined during training
+    if not hasattr(arima, 'order'):
+        raise HTTPException(status_code=500, detail="ARIMA order not set")
+    arima.fit(rates)                # This will call ARIMA's fit() with the fixed order
+    logger.info("ARIMA refreshed on latest data")
+    _models["arima"] = arima
+
+
+# ── Prophet history update ─────────────────────────────────────────────
+def _refresh_prophet(db: Session):
+    """
+    Update the loaded Prophet model's history with all rates from the DB,
+    so future forecasts start from tomorrow without retraining.
+    """
+    if "prophet" not in _models:
+        return
+    prophet = _models["prophet"]
+    rates = crud.get_all_rates_as_dataframe(db)
+    if rates.empty:
+        raise HTTPException(status_code=500, detail="No rate data for Prophet")
+    df = rates.rename(columns={"date": "ds", "rate": "y"})
+    df["ds"] = pd.to_datetime(df["ds"])
+    df = df.sort_values("ds")
+    # Replace the internal history; the model parameters stay the same
+    prophet.history = df
+    logger.info(f"Prophet history updated up to {df['ds'].max()}")
+    _models["prophet"] = prophet
+
+
+# ── Prophet future generation ──────────────────────────────────────────
 def _generate_prophet_future(prophet_model, horizon: int) -> dict:
-    """Use a **loaded** Prophet model to generate future forecasts without refitting."""
     future = prophet_model.make_future_dataframe(periods=horizon, freq='D')
     forecast = prophet_model.predict(future)
     last_date = prophet_model.history["ds"].max()
@@ -74,7 +112,7 @@ def _generate_prophet_future(prophet_model, horizon: int) -> dict:
     }
 
 
-# ── Forecast endpoints ─────────────────────────────────────────────────
+# ── Endpoints ──────────────────────────────────────────────────────────
 
 @router.get("/latest")
 def get_latest_forecasts(
@@ -83,8 +121,6 @@ def get_latest_forecasts(
     db:      Session = Depends(get_db),
 ):
     today = date.today()
-
-    # Only serve forecasts from DB if they were generated today
     records = crud.get_latest_forecasts(db, model_name=model, horizon=horizon)
     if records and records[0].forecast_date == today:
         return {
@@ -102,7 +138,6 @@ def get_latest_forecasts(
             ],
         }
 
-    # No fresh forecasts → tell the client to generate them
     raise HTTPException(
         status_code=404,
         detail=f"No {model} forecasts for today. Please run POST /api/v1/forecasts/generate?horizon={horizon}"
@@ -121,24 +156,24 @@ def generate_forecasts(
     tomorrow = today + timedelta(days=1)
     results = {}
 
-    # ---- Individual models (ARIMA, Prophet, etc.) ----
+    # Refresh models with current data
+    _refresh_arima(db)
+    _refresh_prophet(db)
+
+    # ---- Individual models ----
     for model_name, model in _models.items():
         if model_name == "ensemble":
             continue
-
         try:
-            # --- Prophet ---
             if model_name == "prophet":
                 raw = _generate_prophet_future(model, horizon)
             else:
-                # ARIMA or other – must have a forecast() method
                 if not hasattr(model, 'is_fitted') or not model.is_fitted:
                     continue
                 raw = model.forecast(horizon)
 
             adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
 
-            # Save to DB
             crud.delete_forecasts(db, model_name, horizon, today)
             forecast_objects = []
             for d, p, lo, hi in zip(
@@ -166,7 +201,7 @@ def generate_forecasts(
         except Exception as e:
             results[model_name] = {"status": "error", "detail": str(e)}
 
-    # ---- Ensemble (average of today's forecasts) ----
+    # ---- Ensemble ----
     try:
         model_forecasts = {}
         for name in _models.keys():

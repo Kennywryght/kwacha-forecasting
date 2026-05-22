@@ -12,7 +12,7 @@ from ml.pipeline.gap_filler import fill_gaps
 from ml.pipeline.feature_engineer import engineer_features
 from ml.utils.trainer import train_models
 from ml.utils.tuner import (tune_arima_auto, tune_arimax_auto, tune_prophet, tune_lstm)
-from ml.utils.explainability import run_explainability
+# from ml.utils.explainability import run_explainability   # ← commented to avoid crash
 from db.database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -96,8 +96,7 @@ def run_full_pipeline():
         json.dump(clean_results, f, indent=2, default=str)
     logger.info("Tuning results saved.")
 
-    # ---- 6. Explainability ----
-    logger.info("Step 3/3: Explainability on best base model...")
-    run_explainability(df, method="permutation")   # or "shap"
+    # ---- 6. Explainability (skipped – ARIMAX score bug) ----
+    # run_explainability(df, method="permutation")   # ← disabled for now
 
     logger.info("Full pipeline completed. All outputs in 'outputs/' and 'ml/artifacts/'.")
