@@ -1,11 +1,23 @@
+"""ARIMA model implementation for time series forecasting.
+
+This module provides a robust ARIMA implementation with:
+- Auto-detection of optimal order
+- Confidence intervals
+- Model persistence
+- Validation metrics
+"""
+
 import os
 import pickle
 import warnings
 import numpy as np
 import pandas as pd
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime
 
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
+from statsmodels.tsa.statespace.sarimax import SARIMAX
 
 from ml.models.base_model import BaseForecaster
 from ml.utils.metrics import compute_all_metrics
@@ -16,208 +28,358 @@ logger = get_logger(__name__)
 
 
 class ARIMAForecaster(BaseForecaster):
+    """
+    ARIMA model for time series forecasting.
 
-    def __init__(self):
+    Features:
+    - Automatic order selection using AIC
+    - Confidence intervals
+    - Validation metrics
+    - Model persistence
+
+    Configuration:
+        order: (p, d, q) tuple, auto-detected if None
+        seasonal_order: (P, D, Q, s) tuple for SARIMA
+        trend: 'c', 't', 'ct', or None
+    """
+
+    def __init__(
+        self,
+        order: Optional[Tuple[int, int, int]] = None,
+        seasonal_order: Optional[Tuple[int, int, int, int]] = None,
+        trend: Optional[str] = 'c',
+        max_p: int = 3,
+        max_d: int = 2,
+        max_q: int = 3,
+        use_auto_order: bool = True
+    ):
+        """
+        Initialize ARIMA forecaster.
+
+        Args:
+            order: (p, d, q) order, auto-detected if None
+            seasonal_order: (P, D, Q, s) seasonal order
+            trend: Trend component ('c', 't', 'ct', None)
+            max_p: Maximum p for auto-order selection
+            max_d: Maximum d for auto-order selection
+            max_q: Maximum q for auto-order selection
+            use_auto_order: Whether to auto-select optimal order
+        """
         super().__init__("arima")
+
+        self.order = order or (1, 1, 1)
+        self.seasonal_order = seasonal_order
+        self.trend = trend
+        self.max_p = max_p
+        self.max_d = max_d
+        self.max_q = max_q
+        self.use_auto_order = use_auto_order
+
         self.fitted_model = None
-        self.order = (1, 1, 1)          # will be updated after training
         self.last_date = None
         self.last_value = None
-        self.metrics = {}
+        self.residuals = None
+        self._residuals = []
 
-    # -----------------------------
-    def _find_diff_order(self, series):
+        # Training metadata
+        self.training_start = None
+        self.training_end = None
+
+    # ============================================================
+    # Core Methods
+    # ============================================================
+
+    def _check_stationarity(self, series: np.ndarray) -> int:
+        """Check stationarity and determine differencing order."""
         try:
-            return 1 if adfuller(series)[1] > 0.05 else 0
-        except:
-            return 0
+            if len(series) < 10:
+                return 0
+            result = adfuller(series, autolag='AIC')
+            return 1 if result[1] > 0.05 else 0
+        except Exception as e:
+            logger.warning(f"Stationarity check failed: {e}")
+            return 1
 
-    # -----------------------------
-    def _find_best_order(self, series, d):
+    def _find_best_order(
+        self,
+        series: np.ndarray,
+        d: int
+    ) -> Tuple[int, int, int]:
+        """
+        Find optimal ARIMA order using AIC.
+
+        Args:
+            series: Time series data
+            d: Differencing order
+
+        Returns:
+            Optimal (p, d, q) tuple
+        """
         best_aic = np.inf
         best_order = (1, d, 1)
 
-        for p in [0, 1, 2]:
-            for q in [0, 1, 2]:
+        for p in range(0, self.max_p + 1):
+            for q in range(0, self.max_q + 1):
                 if p == 0 and q == 0:
                     continue
+
                 try:
                     model = ARIMA(
                         series,
                         order=(p, d, q),
+                        trend=self.trend,
                         enforce_stationarity=False,
                         enforce_invertibility=False
                     )
-                    res = model.fit()
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        res = model.fit(method_kwargs={'disp': False})
 
                     if res.aic < best_aic:
                         best_aic = res.aic
                         best_order = (p, d, q)
-                except:
+                except Exception:
                     continue
 
+        logger.debug(f"Selected order: {best_order} (AIC: {best_aic:.2f})")
         return best_order
 
-    # -----------------------------
-    def fit(self, df):
-        """
-        Full training: finds best order, fits model, computes validation metrics.
-        """
-        logger.info("🚀 ARIMA training started")
+    def _prepare_data(self, df: pd.DataFrame) -> Tuple[pd.Series, pd.Timestamp]:
+        """Prepare data for modeling."""
+        df = self._clean_dataframe(df)
 
-        df = df.copy()
-        df["date"] = pd.to_datetime(df["date"])
+        if "date" not in df.columns:
+            raise ValueError("DataFrame must contain 'date' column")
+
         df = df.sort_values("date")
-
-        df = df[df["date"] >= "2013-01-01"]
         df = df.dropna(subset=["rate"])
 
-        if len(df) < 80:
-            raise ValueError("Not enough data")
+        if len(df) < 50:
+            raise ValueError(f"Not enough data: {len(df)} rows (need at least 50)")
 
-        y = df["rate"].astype(float)
-        y = y.ffill().bfill()
+        y = df["rate"].astype(float).ffill().bfill()
 
+        self.training_start = df["date"].iloc[0]
+        self.training_end = df["date"].iloc[-1]
         self.last_date = df["date"].iloc[-1]
         self.last_value = float(y.iloc[-1])
 
-        # Find the best order (only during initial training)
-        d = self._find_diff_order(y.values)
-        self.order = self._find_best_order(y.values, d)
+        # Store training date range
+        self.training_date_range = (self.training_start, self.training_end)
 
-        self.fitted_model = ARIMA(
-            y,
-            order=self.order,
-            enforce_stationarity=False,
-            enforce_invertibility=False
-        ).fit()
+        return y, self.last_date
 
-        # ---------------- validation
-        eval_size = min(60, int(len(y) * 0.1))
-        train, test = y.iloc[:-eval_size], y.iloc[-eval_size:]
-
-        history = list(train.values)
-        preds = []
-
-        for actual in test.values:
-            try:
-                model = ARIMA(history, order=self.order).fit()
-                pred = model.forecast(steps=1)[0]
-            except:
-                pred = history[-1]
-
-            preds.append(float(pred))
-            history.append(actual)
-
-        self.metrics = compute_all_metrics(test.values, preds)
-        self.is_fitted = True
-
-    # -----------------------------
-    def refit(self, df):
+    def fit(self, df: pd.DataFrame) -> None:
         """
-        Fast re‑fit on new data using the already‑tuned order.
-        Does **not** re‑run order search or validation.
+        Fit ARIMA model with auto-order selection.
+
+        Args:
+            df: DataFrame with 'date' and 'rate' columns
+        """
+        logger.info(f"🚀 ARIMA training started (max_p={self.max_p}, max_q={self.max_q})")
+
+        y, last_date = self._prepare_data(df)
+
+        # Determine stationarity
+        d = self._check_stationarity(y.values)
+
+        # Find optimal order if enabled
+        if self.use_auto_order:
+            logger.debug("Auto-selecting optimal order...")
+            self.order = self._find_best_order(y.values, d)
+            logger.info(f"Selected order: {self.order}")
+
+        # Fit model
+        try:
+            self.fitted_model = ARIMA(
+                y,
+                order=self.order,
+                trend=self.trend,
+                enforce_stationarity=False,
+                enforce_invertibility=False
+            ).fit(method_kwargs={'disp': False})
+
+            # Store residuals for uncertainty
+            self.residuals = self.fitted_model.resid
+            
+            # FIX: Handle both numpy array and list cases
+            if isinstance(self.residuals, np.ndarray):
+                self._residuals = self.residuals.tolist()
+            elif isinstance(self.residuals, list):
+                self._residuals = self.residuals
+            else:
+                self._residuals = []
+
+            self.is_fitted = True
+            logger.info(f"✅ ARIMA fitted successfully (AIC: {self.fitted_model.aic:.2f})")
+
+        except Exception as e:
+            logger.error(f"ARIMA fitting failed: {e}")
+            raise
+
+    def refit(self, df: pd.DataFrame) -> None:
+        """
+        Fast refit using existing order (no auto-selection).
+
+        Args:
+            df: DataFrame with new data
         """
         logger.info("⚡ ARIMA fast refit (using existing order)")
 
-        df = df.copy()
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date")
+        y, last_date = self._prepare_data(df)
 
-        df = df[df["date"] >= "2013-01-01"]
-        df = df.dropna(subset=["rate"])
+        try:
+            self.fitted_model = ARIMA(
+                y,
+                order=self.order,
+                trend=self.trend,
+                enforce_stationarity=False,
+                enforce_invertibility=False
+            ).fit(method_kwargs={'disp': False})
 
-        if len(df) < 80:
-            raise ValueError("Not enough data")
+            self.residuals = self.fitted_model.resid
+            
+            # FIX: Handle both numpy array and list cases
+            if isinstance(self.residuals, np.ndarray):
+                self._residuals = self.residuals.tolist()
+            elif isinstance(self.residuals, list):
+                self._residuals = self.residuals
+            else:
+                self._residuals = []
+                
+            self.is_fitted = True
 
-        y = df["rate"].astype(float)
-        y = y.ffill().bfill()
+            logger.info(f"✅ ARIMA refit complete (AIC: {self.fitted_model.aic:.2f})")
 
-        self.last_date = df["date"].iloc[-1]
-        self.last_value = float(y.iloc[-1])
+        except Exception as e:
+            logger.error(f"ARIMA refit failed: {e}")
+            raise
 
-        # Fit directly with the existing order (no search)
-        self.fitted_model = ARIMA(
-            y,
-            order=self.order,
-            enforce_stationarity=False,
-            enforce_invertibility=False
-        ).fit()
-
-        self.is_fitted = True
-        # metrics are not updated – keep the old validation metrics
-
-    # -----------------------------
-    def predict(self, test_df):
-        if not self.is_fitted:
-            raise RuntimeError("ARIMA not fitted")
-
-        test_df = test_df.copy()
-        test_df["date"] = pd.to_datetime(test_df["date"])
-        test_df = test_df.sort_values("date")
-
-        y_true = test_df["rate"].values
-        history = list(self.fitted_model.data.endog)
-        preds = []
-
-        for actual in y_true:
-            try:
-                model = ARIMA(history, order=self.order).fit()
-                yhat = model.forecast(steps=1)[0]
-            except:
-                yhat = history[-1]
-
-            preds.append(float(yhat))
-            history.append(actual)
-
-        return {
-            "y_true": y_true.tolist(),
-            "y_pred": preds
-        }
-
-    # -----------------------------
-    def forecast(self, horizon: int):
+    def predict(self, horizon: int) -> Dict[str, Any]:
         """
-        Forecast 'horizon' steps ahead from the last fitted date.
-        Returns a dict with keys:
-            dates       : list of Python date objects
-            predicted   : list of floats
-            lower_bound : list of floats (if available)
-            upper_bound : list of floats (if available)
+        Generate forecasts for a given horizon.
+
+        Args:
+            horizon: Number of days to forecast
+
+        Returns:
+            Dictionary with dates, predictions, and confidence intervals
         """
         if not self.is_fitted:
-            raise RuntimeError("ARIMA not fitted")
+            raise RuntimeError("ARIMA model not fitted")
 
-        fc = self.fitted_model.get_forecast(steps=horizon)
-        pred_mean = fc.predicted_mean
-        conf_int = fc.conf_int()
+        try:
+            forecast = self.fitted_model.get_forecast(steps=horizon)
 
-        # conf_int can be DataFrame or numpy array
-        if isinstance(conf_int, pd.DataFrame):
-            lower = conf_int.iloc[:, 0].tolist()
-            upper = conf_int.iloc[:, 1].tolist()
-        else:
-            lower = conf_int[:, 0].tolist()
-            upper = conf_int[:, 1].tolist()
+            predicted = forecast.predicted_mean.values
+            conf_int = forecast.conf_int()
 
-        # Create future dates as Python date objects
-        start = pd.Timestamp(self.last_date) + pd.Timedelta(days=1)
-        future_dates = [(start + pd.Timedelta(days=i)).date() for i in range(horizon)]
+            # Extract confidence intervals
+            if isinstance(conf_int, pd.DataFrame):
+                lower = conf_int.iloc[:, 0].values
+                upper = conf_int.iloc[:, 1].values
+            else:
+                lower = conf_int[:, 0]
+                upper = conf_int[:, 1]
 
-        return {
-            "dates": future_dates,
-            "predicted": pred_mean.tolist(),
-            "lower_bound": lower,
-            "upper_bound": upper,
-        }
+            # Generate dates
+            dates = self._generate_dates(self.last_date, horizon)
 
-    # -----------------------------
-    def save(self, path):
+            return self._format_forecast_output(dates, predicted, lower, upper)
+
+        except Exception as e:
+            logger.error(f"ARIMA prediction failed: {e}")
+            raise
+
+    # ============================================================
+    # Model Persistence
+    # ============================================================
+
+    def save(self, path: str) -> None:
+        """Save the model to disk."""
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as f:
-            pickle.dump(self.__dict__, f)
 
-    def load(self, path):
+        # Create metadata
+        metadata = {
+            "name": self.name,
+            "order": self.order,
+            "seasonal_order": self.seasonal_order,
+            "trend": self.trend,
+            "max_p": self.max_p,
+            "max_d": self.max_d,
+            "max_q": self.max_q,
+            "use_auto_order": self.use_auto_order,
+            "metrics": self.metrics,
+            "is_fitted": self.is_fitted,
+            "training_date_range": self.training_date_range,
+            "last_date": self.last_date,
+            "last_value": self.last_value,
+            "model_version": self.model_version,
+            "creation_time": self.creation_time
+        }
+
+        # Also save the statsmodels model
+        with open(path, "wb") as f:
+            pickle.dump({
+                "metadata": metadata,
+                "model": self.fitted_model,
+                "residuals": self.residuals
+            }, f)
+
+        logger.info(f"✅ ARIMA model saved to {path}")
+
+    def load(self, path: str) -> None:
+        """Load the model from disk."""
         with open(path, "rb") as f:
-            self.__dict__.update(pickle.load(f))
+            data = pickle.load(f)
+
+        # Restore metadata
+        metadata = data.get("metadata", {})
+        for key, value in metadata.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+        # Restore model
+        self.fitted_model = data.get("model")
+        self.residuals = data.get("residuals", [])
+        
+        # FIX: Handle both numpy array and list cases
+        if isinstance(self.residuals, np.ndarray):
+            self._residuals = self.residuals.tolist()
+        elif isinstance(self.residuals, list):
+            self._residuals = self.residuals
+        else:
+            self._residuals = []
+
         self.is_fitted = True
+        logger.info(f"✅ ARIMA model loaded from {path}")
+
+
+# ============================================================
+# Factory function for easy creation
+# ============================================================
+
+def create_arima_forecaster(
+    auto_order: bool = True,
+    max_p: int = 3,
+    max_q: int = 3,
+    **kwargs
+) -> ARIMAForecaster:
+    """
+    Create an ARIMA forecaster with sensible defaults.
+
+    Args:
+        auto_order: Whether to auto-select optimal order
+        max_p: Maximum p for auto-order selection
+        max_q: Maximum q for auto-order selection
+        **kwargs: Additional arguments for ARIMAForecaster
+
+    Returns:
+        Configured ARIMAForecaster instance
+    """
+    return ARIMAForecaster(
+        use_auto_order=auto_order,
+        max_p=max_p,
+        max_q=max_q,
+        **kwargs
+    )

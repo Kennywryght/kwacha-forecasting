@@ -1,6 +1,15 @@
+"""Ensemble model combining multiple forecasters.
+
+This module provides an ensemble forecaster that combines predictions
+from multiple base models using weighted averaging.
+"""
+
 import os
 import pickle
 import numpy as np
+import pandas as pd
+from typing import Dict, Any, List, Optional, Tuple
+from datetime import datetime
 
 from ml.models.base_model import BaseForecaster
 from core.logging_config import get_logger
@@ -9,266 +18,317 @@ logger = get_logger(__name__)
 
 
 class EnsembleForecaster(BaseForecaster):
+    """
+    Ensemble forecaster combining multiple models.
 
-    def __init__(self, models: dict):
+    Features:
+    - Weighted averaging based on validation performance
+    - Robust to model failures
+    - Dynamic weighting
+    - Automatic model selection
+    """
 
+    def __init__(
+        self,
+        models: Dict[str, BaseForecaster],
+        weights: Optional[Dict[str, float]] = None,
+        weighting_scheme: str = "rmse",  # "rmse", "mae", "equal"
+        min_weight: float = 0.05,
+        max_models: int = 5
+    ):
+        """
+        Initialize ensemble forecaster.
+
+        Args:
+            models: Dictionary of {name: model} to ensemble
+            weights: Pre-defined weights (optional)
+            weighting_scheme: How to compute weights
+            min_weight: Minimum weight for any model
+            max_models: Maximum number of models to include
+        """
         super().__init__("ensemble")
 
-        # dictionary of trained models
         self.models = models
+        self.weights = weights or {}
+        self.weighting_scheme = weighting_scheme
+        self.min_weight = min_weight
+        self.max_models = max_models
 
-        # learned weights
-        self.weights = {}
-
+        self.active_models = {}
         self.metrics = {}
 
-    # =====================================================
-    # SAFE MODEL FILTER
-    # =====================================================
-    def _valid_models(self):
+    # ============================================================
+    # Core Methods
+    # ============================================================
 
+    def _get_valid_models(self) -> Dict[str, BaseForecaster]:
+        """
+        Filter to only valid, fitted models.
+
+        Returns:
+            Dictionary of valid models
+        """
         valid = {}
 
         for name, model in self.models.items():
-
             try:
+                if model is None:
+                    continue
 
-                if (
-                    model is not None and
-                    hasattr(model, "is_fitted") and
-                    model.is_fitted
-                ):
+                if not hasattr(model, "is_fitted"):
+                    continue
 
-                    rmse = model._safe_metric("rmse")
+                if not model.is_fitted:
+                    continue
 
-                    if rmse < 999:
-                        valid[name] = model
+                # Check if model can predict
+                if not hasattr(model, "predict"):
+                    continue
 
-            except Exception:
+                valid[name] = model
+
+            except Exception as e:
+                logger.warning(f"Model {name} validation failed: {e}")
                 continue
 
         return valid
 
-    # =====================================================
-    # TRAIN ENSEMBLE
-    # =====================================================
-    def fit(self, df=None):
+    def _compute_weights(self) -> Dict[str, float]:
+        """
+        Compute weights based on validation metrics.
 
-        valid_models = self._valid_models()
+        Returns:
+            Dictionary of {model_name: weight}
+        """
+        valid_models = self._get_valid_models()
 
-        if len(valid_models) == 0:
-            raise ValueError(
-                "No valid trained models available"
-            )
+        if not valid_models:
+            raise ValueError("No valid models available for weighting")
 
-        # -------------------------------------------------
-        # RMSE-BASED WEIGHTING
-        # -------------------------------------------------
+        if self.weights and all(k in valid_models for k in self.weights):
+            # Use provided weights
+            total = sum(self.weights.values())
+            return {k: v / total for k, v in self.weights.items() if k in valid_models}
+
+        # Compute weights from metrics
+        if self.weighting_scheme == "equal":
+            n = len(valid_models)
+            return {name: 1.0 / n for name in valid_models}
+
+        # Get scores for each model
         scores = {}
 
         for name, model in valid_models.items():
-
-            rmse = model._safe_metric("rmse")
-
-            score = 1.0 / max(rmse, 1e-6)
+            if self.weighting_scheme == "rmse":
+                score = 1.0 / max(model._safe_metric("rmse", 1e-6), 1e-6)
+            elif self.weighting_scheme == "mae":
+                score = 1.0 / max(model._safe_metric("mae", 1e-6), 1e-6)
+            elif self.weighting_scheme == "mape":
+                score = 1.0 / max(model._safe_metric("mape", 1e-6), 1e-6)
+            else:
+                score = 1.0
 
             scores[name] = score
 
+        # Normalize weights
         total_score = sum(scores.values())
 
-        self.weights = {
+        if total_score <= 0:
+            # Fallback to equal weights
+            n = len(valid_models)
+            return {name: 1.0 / n for name in valid_models}
 
-            name: round(score / total_score, 4)
+        weights = {}
+        for name, score in scores.items():
+            weight = score / total_score
+            # Apply minimum weight
+            if weight < self.min_weight and len(valid_models) > 1:
+                weight = self.min_weight
+            weights[name] = weight
 
-            for name, score in scores.items()
-        }
+        # Re-normalize after applying min weight
+        total = sum(weights.values())
+        if total > 0:
+            weights = {k: v / total for k, v in weights.items()}
 
-        logger.info(
-            f"✅ Ensemble Weights → {self.weights}"
-        )
+        return weights
 
-        # -------------------------------------------------
-        # COMBINED METRICS
-        # -------------------------------------------------
-        self.metrics = {
+    def fit(self, df: Optional[pd.DataFrame] = None) -> None:
+        """
+        Fit the ensemble (compute weights).
 
-            "rmse": round(
-                sum(
-                    self.weights[name] *
-                    valid_models[name]._safe_metric("rmse")
+        Args:
+            df: Training data (optional, used for cross-validation)
+        """
+        logger.info("🚀 Ensemble training started")
 
-                    for name in valid_models
-                ),
-                4
-            ),
+        valid_models = self._get_valid_models()
 
-            "mae": round(
-                sum(
-                    self.weights[name] *
-                    valid_models[name]._safe_metric("mae")
+        if not valid_models:
+            raise ValueError("No valid trained models available for ensemble")
 
-                    for name in valid_models
-                ),
-                4
-            ),
+        # Compute weights
+        self.weights = self._compute_weights()
+        self.active_models = {k: valid_models[k] for k in self.weights}
 
-            "mape": round(
-                sum(
-                    self.weights[name] *
-                    valid_models[name]._safe_metric("mape")
+        # Compute combined metrics
+        combined_metrics = {}
+        metric_keys = ["rmse", "mae", "mape", "r_squared"]
 
-                    for name in valid_models
-                ),
-                4
-            ),
+        for key in metric_keys:
+            values = []
+            for name, model in self.active_models.items():
+                val = model._safe_metric(key)
+                if val < 999:  # Valid metric
+                    values.append((val, self.weights[name]))
 
-            "r_squared": round(
-                max(
-                    valid_models[name]._safe_metric(
-                        "r_squared",
-                        -999
+            if values:
+                if key in ["rmse", "mae", "mape"]:
+                    # Weighted average for error metrics
+                    combined_metrics[key] = round(
+                        sum(v * w for v, w in values), 4
+                    )
+                elif key == "r_squared":
+                    # Max for R²
+                    combined_metrics[key] = round(
+                        max(v for v, _ in values), 4
                     )
 
-                    for name in valid_models
-                ),
-                4
-            )
-        }
-
-        logger.info(
-            f"📊 Ensemble Metrics → {self.metrics}"
-        )
+        self.metrics = combined_metrics
 
         self.is_fitted = True
 
-    # =====================================================
-    # FORECAST
-    # =====================================================
-    def predict(self, horizon):
+        logger.info(f"✅ Ensemble weights: {self.weights}")
+        logger.info(f"📊 Ensemble metrics: {self.metrics}")
 
+    def predict(self, horizon: int) -> Dict[str, Any]:
+        """
+        Generate ensemble forecast.
+
+        Args:
+            horizon: Number of days to forecast
+
+        Returns:
+            Dictionary with dates, predictions, and confidence intervals
+        """
         if not self.is_fitted:
-            raise RuntimeError(
-                "Ensemble model not fitted"
-            )
+            raise RuntimeError("Ensemble model not fitted")
 
-        valid_models = self._valid_models()
+        if not self.active_models:
+            raise RuntimeError("No active models available")
 
-        if len(valid_models) == 0:
-            raise RuntimeError(
-                "No valid models available"
-            )
-
+        # Collect forecasts from each model
         forecasts = {}
-
-        # -------------------------------------------------
-        # COLLECT FORECASTS
-        # -------------------------------------------------
-        for name, model in valid_models.items():
-
+        for name, model in self.active_models.items():
             try:
-
                 pred = model.predict(horizon)
-
                 forecasts[name] = pred
-
             except Exception as e:
+                logger.warning(f"{name} forecast failed: {e}")
 
-                logger.warning(
-                    f"{name} forecast failed: {e}"
-                )
+        if not forecasts:
+            raise RuntimeError("All ensemble models failed to forecast")
 
-        if len(forecasts) == 0:
-            raise RuntimeError(
-                "All ensemble forecasts failed"
-            )
-
-        # -------------------------------------------------
-        # USE FIRST MODEL DATES
-        # -------------------------------------------------
+        # Use first model's dates
         first_model = list(forecasts.keys())[0]
-
         dates = forecasts[first_model]["dates"]
 
-        # -------------------------------------------------
-        # BLEND PREDICTIONS
-        # -------------------------------------------------
-        blended = np.zeros(horizon)
-
-        lower = np.zeros(horizon)
-
-        upper = np.zeros(horizon)
-
-        for name, forecast in forecasts.items():
-
-            weight = self.weights.get(name, 0)
-
-            blended += (
-                np.array(forecast["predicted"]) * weight
-            )
-
-            lower += (
-                np.array(forecast["lower_bound"]) * weight
-            )
-
-            upper += (
-                np.array(forecast["upper_bound"]) * weight
-            )
-
-        return {
-
-            "dates": dates,
-
-            "predicted": list(
-                map(float, blended)
-            ),
-
-            "lower_bound": list(
-                map(float, lower)
-            ),
-
-            "upper_bound": list(
-                map(float, upper)
-            )
+        # Get weights for models that succeeded
+        active_weights = {
+            name: self.weights.get(name, 0)
+            for name in forecasts
         }
 
-    # =====================================================
-    # SAVE
-    # =====================================================
-    def save(self, path):
+        # Re-normalize weights
+        total_weight = sum(active_weights.values())
+        if total_weight <= 0:
+            # Fallback to equal weights
+            n = len(forecasts)
+            active_weights = {name: 1.0 / n for name in forecasts}
+        else:
+            active_weights = {k: v / total_weight for k, v in active_weights.items()}
 
-        os.makedirs(
-            os.path.dirname(path),
-            exist_ok=True
+        # Initialize arrays
+        blended_pred = np.zeros(horizon)
+        blended_lower = np.zeros(horizon)
+        blended_upper = np.zeros(horizon)
+
+        # Blend predictions
+        for name, forecast in forecasts.items():
+            weight = active_weights.get(name, 0)
+
+            if "predicted" in forecast:
+                blended_pred += np.array(forecast["predicted"]) * weight
+
+            if "lower_bound" in forecast:
+                blended_lower += np.array(forecast["lower_bound"]) * weight
+            elif "lower" in forecast:
+                blended_lower += np.array(forecast["lower"]) * weight
+
+            if "upper_bound" in forecast:
+                blended_upper += np.array(forecast["upper_bound"]) * weight
+            elif "upper" in forecast:
+                blended_upper += np.array(forecast["upper"]) * weight
+
+        # If no confidence intervals, estimate from ensemble spread
+        if np.all(blended_lower == 0) or np.all(blended_upper == 0):
+            std_dev = np.std([f["predicted"] for f in forecasts.values()], axis=0)
+            blended_lower = blended_pred - 1.96 * std_dev
+            blended_upper = blended_pred + 1.96 * std_dev
+
+        return self._format_forecast_output(
+            dates,
+            blended_pred.tolist(),
+            blended_lower.tolist(),
+            blended_upper.tolist()
         )
+
+    # ============================================================
+    # Model Persistence
+    # ============================================================
+
+    def save(self, path: str) -> None:
+        """Save the ensemble model to disk."""
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        metadata = {
+            "name": self.name,
+            "weights": self.weights,
+            "weighting_scheme": self.weighting_scheme,
+            "min_weight": self.min_weight,
+            "max_models": self.max_models,
+            "metrics": self.metrics,
+            "is_fitted": self.is_fitted,
+            "model_version": self.model_version,
+            "creation_time": self.creation_time,
+            "active_models": list(self.active_models.keys())
+        }
 
         with open(path, "wb") as f:
-
             pickle.dump({
-
-                "weights": self.weights,
-                "metrics": self.metrics
-
+                "metadata": metadata,
+                "models": self.models,  # Store all models
+                "weights": self.weights
             }, f)
 
-        logger.info(
-            f"✅ Ensemble saved → {path}"
-        )
+        logger.info(f"✅ Ensemble saved to {path}")
 
-    # =====================================================
-    # LOAD
-    # =====================================================
-    def load(self, path):
-
+    def load(self, path: str) -> None:
+        """Load the ensemble model from disk."""
         with open(path, "rb") as f:
-
             data = pickle.load(f)
 
-        self.weights = data["weights"]
+        metadata = data.get("metadata", {})
+        for key, value in metadata.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
-        self.metrics = data["metrics"]
+        # Restore models
+        self.models = data.get("models", {})
+        self.weights = data.get("weights", {})
+
+        # Validate loaded models
+        self.active_models = self._get_valid_models()
 
         self.is_fitted = True
-
-        logger.info(
-            f"✅ Ensemble loaded ← {path}"
-        )
+        logger.info(f"✅ Ensemble loaded from {path} ({len(self.active_models)} active models)")

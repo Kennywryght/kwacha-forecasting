@@ -17,65 +17,56 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/rates", tags=["Exchange Rates"])
 
-# ── In-memory cache for live rates (10 minutes) ──
+# ── In-memory cache for live rates (60 seconds only) ──
 _live_rate_cache = {
     "rate": None,
     "timestamp": None
 }
-CACHE_TTL_SECONDS = 600
+CACHE_TTL_SECONDS = 60   # was 600 — reduced so rate stays accurate
 
 
 @router.get("/latest")
 def get_latest_rate(db: Session = Depends(get_db)):
     """
-    Returns the most recent exchange rate. If today's rate does not exist
-    in the database, a live API is called to fetch it, the result is stored,
-    and returned. An in-memory cache avoids excessive external calls.
+    Returns the most recent exchange rate.
+    Priority: cache (60s) → today's DB row → live fetch → latest DB row (stale).
     """
     now = datetime.utcnow()
 
     # 1. Serve from cache if still fresh
-    if (_live_rate_cache["rate"] and _live_rate_cache["timestamp"]
-            and (now - _live_rate_cache["timestamp"]).total_seconds() < CACHE_TTL_SECONDS):
+    if (
+        _live_rate_cache["rate"]
+        and _live_rate_cache["timestamp"]
+        and (now - _live_rate_cache["timestamp"]).total_seconds() < CACHE_TTL_SECONDS
+    ):
         cached = _live_rate_cache["rate"]
         return {
             "date": cached["date"],
             "rate": cached["rate"],
-            "source": "live",
+            "source": cached.get("source", "cache"),
             "stale": False,
             "daily_return": None,
             "is_interpolated": False,
         }
 
-    # 2. Check if today's rate already exists in DB
-    today = date.today()
-    today_db_record = db.query(ExchangeRate).filter(ExchangeRate.date == today).first()
-    if today_db_record:
-        # Cache the DB record
-        _live_rate_cache["rate"] = {
-            "date": str(today_db_record.date),
-            "rate": today_db_record.rate
-        }
-        _live_rate_cache["timestamp"] = now
-        return {
-            "date": str(today_db_record.date),
-            "rate": today_db_record.rate,
-            "daily_return": today_db_record.daily_return,
-            "source": today_db_record.source,
-            "is_interpolated": today_db_record.is_interpolated,
-            "stale": False,
-        }
-
-    # 3. No today's rate → fetch live
+    # 2. Try live fetch first — always prefer fresh data
     live_rate = fetch_current_rate()
-    if live_rate:
-        # Persist today's rate so the pipeline (and future requests) sees it
-        crud.upsert_rate(db, today, live_rate["rate"], source="live")
-        # Update cache
-        _live_rate_cache["rate"] = live_rate
+    if live_rate and live_rate.get("rate"):
+        today = date.today()
+        # Persist so the ML pipeline sees today's rate
+        try:
+            crud.upsert_rate(db, today, live_rate["rate"], source="live")
+        except Exception as e:
+            logger.warning(f"Could not persist live rate: {e}")
+
+        _live_rate_cache["rate"] = {
+            "date": live_rate.get("date", str(today)),
+            "rate": live_rate["rate"],
+            "source": "live",
+        }
         _live_rate_cache["timestamp"] = now
         return {
-            "date": live_rate["date"],
+            "date": live_rate.get("date", str(today)),
             "rate": live_rate["rate"],
             "source": "live",
             "stale": False,
@@ -83,17 +74,38 @@ def get_latest_rate(db: Session = Depends(get_db)):
             "is_interpolated": False,
         }
 
-    # 4. Live fetch failed – fallback to most recent DB record (stale warning)
+    # 3. Live fetch failed — check today's DB row
+    today = date.today()
+    today_record = db.query(ExchangeRate).filter(ExchangeRate.date == today).first()
+    if today_record:
+        _live_rate_cache["rate"] = {
+            "date": str(today_record.date),
+            "rate": today_record.rate,
+            "source": today_record.source or "db",
+        }
+        _live_rate_cache["timestamp"] = now
+        return {
+            "date": str(today_record.date),
+            "rate": today_record.rate,
+            "daily_return": today_record.daily_return,
+            "source": today_record.source,
+            "is_interpolated": today_record.is_interpolated,
+            "stale": False,
+        }
+
+    # 4. Fallback to most recent DB record
     record = crud.get_latest_rate(db)
     if not record:
         raise HTTPException(status_code=404, detail="No rates found in database")
+
+    logger.warning(f"Live fetch failed, serving stale rate from {record.date}")
     return {
         "date": str(record.date),
         "rate": record.rate,
         "daily_return": record.daily_return,
         "source": record.source,
         "is_interpolated": record.is_interpolated,
-        "stale": True,          # Frontend can use this flag
+        "stale": True,
     }
 
 
@@ -120,9 +132,9 @@ def get_rate_history(
         "latest_rate": records[-1].rate,
         "data": [
             {
-                "date":         str(r.date),
-                "rate":         r.rate,
-                "daily_return": r.daily_return,
+                "date":            str(r.date),
+                "rate":            r.rate,
+                "daily_return":    r.daily_return,
                 "is_interpolated": r.is_interpolated,
             }
             for r in records

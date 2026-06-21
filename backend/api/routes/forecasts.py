@@ -1,14 +1,14 @@
 import os
 import sys
 import pandas as pd
-from datetime import date, timedelta, datetime
-from prophet import Prophet
+from datetime import date, datetime, timedelta
+from threading import Lock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
-from db.database import get_db
+from db.database import get_db, SessionLocal
 from db import crud
 from db.models import Forecast
 from core.logging_config import get_logger
@@ -17,27 +17,54 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/forecasts", tags=["Forecasts"])
 
+# Global state management
 _models = {}
+_training_lock = Lock()
+
+# Generation state tracking to prevent duplicate generations
+_generation_state = {
+    "in_progress": False,
+    "started_at": None,
+    "horizon": None,
+    "completed_at": None,
+    "error": None,
+}
+
 
 def set_models(models: dict):
+    """Set the loaded models in memory"""
     global _models
     _models = models
 
 
+def get_loaded_model_names() -> list:
+    """Returns names of models currently loaded in memory."""
+    return list(_models.keys())
+
+
 def _safe_date(d):
+    """Convert various date types to date object"""
     if hasattr(d, 'date'):
         return d.date()
     return d
 
 
 def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
+    """
+    Adjust forecast dates to ensure they start from start_date
+    and are limited to horizon length.
+    """
     dates = raw.get("dates", [])
     predicted = raw.get("predicted", [])
     lower = raw.get("lower_bound", []) or raw.get("lower", [])
     upper = raw.get("upper_bound", []) or raw.get("upper", [])
 
     clean_dates = [_safe_date(d) for d in dates]
-    filtered = [(d, p, l, u) for d, p, l, u in zip(clean_dates, predicted, lower, upper) if d >= start_date]
+    filtered = [
+        (d, p, l, u)
+        for d, p, l, u in zip(clean_dates, predicted, lower, upper)
+        if d >= start_date
+    ]
     filtered = filtered[:horizon]
 
     if filtered:
@@ -48,229 +75,447 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
             "lower_bound": list(lower),
             "upper_bound": list(upper),
         }
-    else:
+    return {"dates": [], "predicted": [], "lower_bound": [], "upper_bound": []}
+
+
+def _run_generate(horizon: int):
+    """
+    Generate forecasts using already-trained models.
+    No retraining happens here - models use their existing fitted state.
+    Owns its own DB session — critical because the request-scoped session
+    is closed by FastAPI before this background task finishes.
+    """
+    global _generation_state
+    
+    # Update generation state
+    _generation_state.update({
+        "in_progress": True,
+        "started_at": datetime.now(),
+        "horizon": horizon,
+        "error": None,
+    })
+    
+    db = SessionLocal()
+    try:
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+
+        logger.info(f"📊 Generating {horizon}-day forecasts using pre-trained models")
+        
+        # ---- Individual models (NO retraining, just predict) ----
+        generated_models = []
+        for model_name, model in _models.items():
+            if model_name == "ensemble":
+                continue
+            try:
+                # Skip if model isn't fitted
+                if not getattr(model, 'is_fitted', False):
+                    logger.warning(f"{model_name} not fitted — skipping")
+                    continue
+                
+                logger.info(f"  Generating {model_name} forecast...")
+                
+                if model_name == "prophet":
+                    # ProphetForecaster.predict() returns dates/predicted/lower/upper
+                    if hasattr(model, 'predict'):
+                        raw = model.predict(horizon)
+                    else:
+                        logger.warning("Prophet has no predict() — skipping")
+                        continue
+                else:
+                    # ARIMA, ARIMAX, etc. use forecast()
+                    raw = model.forecast(horizon)
+
+                adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
+                if not adjusted["dates"]:
+                    logger.warning(f"{model_name}: no dates after adjustment — skipping")
+                    continue
+
+                lowers = adjusted["lower_bound"] or [None] * len(adjusted["dates"])
+                uppers = adjusted["upper_bound"] or [None] * len(adjusted["dates"])
+
+                # Delete old forecasts for today and save new ones
+                crud.delete_forecasts(db, model_name, horizon, today)
+                objects = [
+                    Forecast(
+                        model_name=model_name,
+                        horizon_days=horizon,
+                        forecast_date=today,
+                        target_date=d,
+                        predicted_rate=p,
+                        lower_bound=lo,
+                        upper_bound=hi,
+                    )
+                    for d, p, lo, hi in zip(
+                        adjusted["dates"], adjusted["predicted"], lowers, uppers
+                    )
+                ]
+                crud.save_forecasts_bulk(db, objects)
+                generated_models.append(model_name)
+                logger.info(f"  ✅ {model_name}: saved {len(objects)} points")
+            except Exception as e:
+                logger.error(f"  ❌ {model_name} generation failed: {e}")
+
+        # ---- Ensemble (combines individual model forecasts) ----
+        if len(generated_models) >= 2:
+            try:
+                logger.info("  Generating ensemble forecast...")
+                model_forecasts = {}
+                for name in generated_models:
+                    recs = crud.get_latest_forecasts(db, name, horizon)
+                    if recs and recs[0].forecast_date == today:
+                        model_forecasts[name] = recs
+
+                if not model_forecasts:
+                    logger.warning("  ⚠️ Ensemble: no individual forecasts for today")
+                else:
+                    date_sets = [set(r.target_date for r in recs) for recs in model_forecasts.values()]
+                    common_dates = sorted(set.intersection(*date_sets))[:horizon]
+
+                    ensemble_objects = []
+                    for d in common_dates:
+                        preds, lowers, uppers = [], [], []
+                        for recs in model_forecasts.values():
+                            r = next((r for r in recs if r.target_date == d), None)
+                            if r:
+                                preds.append(r.predicted_rate)
+                                if r.lower_bound is not None:
+                                    lowers.append(r.lower_bound)
+                                if r.upper_bound is not None:
+                                    uppers.append(r.upper_bound)
+
+                        if preds:
+                            ensemble_objects.append(Forecast(
+                                model_name="ensemble",
+                                horizon_days=horizon,
+                                forecast_date=today,
+                                target_date=d,
+                                predicted_rate=sum(preds) / len(preds),
+                                lower_bound=sum(lowers) / len(lowers) if lowers else None,
+                                upper_bound=sum(uppers) / len(uppers) if uppers else None,
+                            ))
+
+                    if ensemble_objects:
+                        crud.delete_forecasts(db, "ensemble", horizon, today)
+                        crud.save_forecasts_bulk(db, ensemble_objects)
+                        logger.info(f"  ✅ ensemble: saved {len(ensemble_objects)} points")
+            except Exception as e:
+                logger.error(f"  ❌ ensemble generation failed: {e}")
+
+        logger.info(f"🎯 Forecast generation complete for horizon={horizon}")
+        
+        # Mark as completed successfully
+        _generation_state.update({
+            "completed_at": datetime.now(),
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Forecast generation failed: {e}")
+        _generation_state["error"] = str(e)
+    finally:
+        db.close()
+        # Small delay before marking as not in progress (prevents race conditions)
+        _generation_state["in_progress"] = False
+
+
+# ── Endpoints ──────────────────────────────────────────────────────────────────
+
+@router.get("/status")
+def get_forecast_status(
+    horizon: int = Query(default=7),
+    db: Session = Depends(get_db),
+):
+    """
+    Enhanced status endpoint with generation progress tracking.
+    Returns is_fresh=true when today's ensemble forecast exists for
+    the requested horizon — avoids polling the wrong horizon.
+    """
+    # Check generation state first (avoids DB queries during generation)
+    if _generation_state["in_progress"]:
+        elapsed = 0
+        if _generation_state["started_at"]:
+            elapsed = int((datetime.now() - _generation_state["started_at"]).total_seconds())
+        
         return {
-            "dates": [],
-            "predicted": [],
-            "lower_bound": [],
-            "upper_bound": [],
+            "horizon_days": horizon,
+            "is_fresh": False,
+            "forecast_date": None,
+            "loaded_models": get_loaded_model_names(),
+            "status": "generating",
+            "generation_elapsed_seconds": elapsed,
+            "generation_horizon": _generation_state["horizon"],
+            "message": f"Generating forecasts for {_generation_state['horizon']}d horizon ({elapsed}s elapsed)..."
+        }
+    
+    # Check if generation just completed
+    if _generation_state["completed_at"]:
+        time_since_completion = (datetime.now() - _generation_state["completed_at"]).total_seconds()
+        if time_since_completion < 10:
+            # Recently completed - might still be settling
+            pass
+    
+    try:
+        today = date.today()
+        records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
+        is_fresh = bool(records and records[0].forecast_date == today)
+        
+        response = {
+            "horizon_days": horizon,
+            "is_fresh": is_fresh,
+            "forecast_date": str(records[0].forecast_date) if records else None,
+            "loaded_models": get_loaded_model_names(),
+            "status": "ready",
+        }
+        
+        # Add generation error if one occurred
+        if _generation_state.get("error"):
+            response["last_error"] = _generation_state["error"]
+            # Clear error after reporting it once
+            _generation_state["error"] = None
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Status check failed: {e}")
+        return {
+            "horizon_days": horizon,
+            "is_fresh": False,
+            "forecast_date": None,
+            "loaded_models": get_loaded_model_names(),
+            "status": "error",
+            "message": f"Status check failed: {str(e)}"
         }
 
-
-# ── ARIMA light refit ──────────────────────────────────────────────────
-def _refresh_arima(db: Session):
-    """
-    Re‑fit the ARIMA model on all available rates using its already‑tuned order.
-    This brings its internal state up to today without a full hyperparameter search.
-    """
-    if "arima" not in _models:
-        return
-    arima = _models["arima"]
-    rates = crud.get_all_rates_as_dataframe(db)
-    if rates.empty:
-        raise HTTPException(status_code=500, detail="No rate data for ARIMA")
-    # Use the order that was already determined during training
-    if not hasattr(arima, 'order'):
-        raise HTTPException(status_code=500, detail="ARIMA order not set")
-    arima.fit(rates)                # This will call ARIMA's fit() with the fixed order
-    logger.info("ARIMA refreshed on latest data")
-    _models["arima"] = arima
-
-
-# ── Prophet history update ─────────────────────────────────────────────
-def _refresh_prophet(db: Session):
-    """
-    Update the loaded Prophet model's history with all rates from the DB,
-    so future forecasts start from tomorrow without retraining.
-    """
-    if "prophet" not in _models:
-        return
-    prophet = _models["prophet"]
-    rates = crud.get_all_rates_as_dataframe(db)
-    if rates.empty:
-        raise HTTPException(status_code=500, detail="No rate data for Prophet")
-    df = rates.rename(columns={"date": "ds", "rate": "y"})
-    df["ds"] = pd.to_datetime(df["ds"])
-    df = df.sort_values("ds")
-    # Replace the internal history; the model parameters stay the same
-    prophet.history = df
-    logger.info(f"Prophet history updated up to {df['ds'].max()}")
-    _models["prophet"] = prophet
-
-
-# ── Prophet future generation ──────────────────────────────────────────
-def _generate_prophet_future(prophet_model, horizon: int) -> dict:
-    future = prophet_model.make_future_dataframe(periods=horizon, freq='D')
-    forecast = prophet_model.predict(future)
-    last_date = prophet_model.history["ds"].max()
-    future_forecast = forecast[forecast['ds'] > last_date]
-    return {
-        "dates":      [_safe_date(d) for d in pd.to_datetime(future_forecast["ds"]).tolist()],
-        "predicted":  future_forecast["yhat"].tolist(),
-        "lower":      future_forecast["yhat_lower"].tolist(),
-        "upper":      future_forecast["yhat_upper"].tolist(),
-    }
-
-
-# ── Endpoints ──────────────────────────────────────────────────────────
 
 @router.get("/latest")
 def get_latest_forecasts(
-    horizon: int = Query(default=7, description="1, 7, or 30"),
-    model:   str = Query(default="ensemble"),
-    db:      Session = Depends(get_db),
+    horizon: int = Query(default=7),
+    model: str = Query(default="ensemble"),
+    db: Session = Depends(get_db),
 ):
-    today = date.today()
+    """
+    Get the latest forecasts for a specific model and horizon.
+    """
     records = crud.get_latest_forecasts(db, model_name=model, horizon=horizon)
-    if records and records[0].forecast_date == today:
-        return {
-            "model_name":    model,
-            "forecast_date": str(records[0].forecast_date),
-            "horizon_days":  horizon,
-            "forecasts": [
-                {
-                    "target_date":    str(r.target_date),
-                    "predicted_rate": r.predicted_rate,
-                    "lower_bound":    r.lower_bound,
-                    "upper_bound":    r.upper_bound,
-                }
-                for r in records
-            ],
-        }
+    if not records:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No forecasts for model='{model}' horizon={horizon}. Run POST /generate first."
+        )
+    
+    today = date.today()
+    forecast_date = records[0].forecast_date
+    is_stale = forecast_date != today
 
-    raise HTTPException(
-        status_code=404,
-        detail=f"No {model} forecasts for today. Please run POST /api/v1/forecasts/generate?horizon={horizon}"
-    )
+    return {
+        "model_name": model,
+        "forecast_date": str(forecast_date),
+        "is_stale": is_stale,
+        "horizon_days": horizon,
+        "forecasts": [
+            {
+                "target_date": str(r.target_date),
+                "predicted_rate": r.predicted_rate,
+                "lower_bound": r.lower_bound,
+                "upper_bound": r.upper_bound,
+            }
+            for r in records
+        ],
+    }
 
 
 @router.post("/generate")
 def generate_forecasts(
+    background_tasks: BackgroundTasks,
     horizon: int = Query(default=7),
-    db:      Session = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
+    """
+    Generate forecasts using already-loaded & trained models.
+    Prevents duplicate generation requests.
+    No model retraining happens here - models must be pre-trained.
+    """
     if not _models:
-        raise HTTPException(status_code=503, detail="Models not loaded")
-
-    today = date.today()
-    tomorrow = today + timedelta(days=1)
-    results = {}
-
-    # Refresh models with current data
-    _refresh_arima(db)
-    _refresh_prophet(db)
-
-    # ---- Individual models ----
-    for model_name, model in _models.items():
-        if model_name == "ensemble":
-            continue
-        try:
-            if model_name == "prophet":
-                raw = _generate_prophet_future(model, horizon)
-            else:
-                if not hasattr(model, 'is_fitted') or not model.is_fitted:
-                    continue
-                raw = model.forecast(horizon)
-
-            adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
-
-            crud.delete_forecasts(db, model_name, horizon, today)
-            forecast_objects = []
-            for d, p, lo, hi in zip(
-                adjusted["dates"],
-                adjusted["predicted"],
-                adjusted["lower_bound"] if adjusted["lower_bound"] else [],
-                adjusted["upper_bound"] if adjusted["upper_bound"] else []
-            ):
-                forecast_objects.append(Forecast(
-                    model_name=model_name,
-                    horizon_days=horizon,
-                    forecast_date=today,
-                    target_date=d,
-                    predicted_rate=p,
-                    lower_bound=lo,
-                    upper_bound=hi,
-                ))
-            crud.save_forecasts_bulk(db, forecast_objects)
-
-            results[model_name] = {
-                "status": "ok",
-                "points": len(forecast_objects),
-                "metrics": getattr(model, "metrics", None),
-            }
-        except Exception as e:
-            results[model_name] = {"status": "error", "detail": str(e)}
-
-    # ---- Ensemble ----
-    try:
-        model_forecasts = {}
-        for name in _models.keys():
-            if name == "ensemble":
-                continue
-            recs = crud.get_latest_forecasts(db, name, horizon)
-            if recs and recs[0].forecast_date == today:
-                model_forecasts[name] = recs
-
-        if model_forecasts:
-            date_sets = [set(r.target_date for r in recs) for recs in model_forecasts.values()]
-            common_dates = sorted(set.intersection(*date_sets))[:horizon]
-
-            forecast_objects = []
-            for d in common_dates:
-                preds, lowers, uppers = [], [], []
-                for recs in model_forecasts.values():
-                    r = next(r for r in recs if r.target_date == d)
-                    preds.append(r.predicted_rate)
-                    if r.lower_bound is not None:
-                        lowers.append(r.lower_bound)
-                    if r.upper_bound is not None:
-                        uppers.append(r.upper_bound)
-                forecast_objects.append(Forecast(
-                    model_name="ensemble",
-                    horizon_days=horizon,
-                    forecast_date=today,
-                    target_date=d,
-                    predicted_rate=sum(preds) / len(preds),
-                    lower_bound=sum(lowers) / len(lowers) if lowers else None,
-                    upper_bound=sum(uppers) / len(uppers) if uppers else None,
-                ))
-
-            crud.delete_forecasts(db, "ensemble", horizon, today)
-            crud.save_forecasts_bulk(db, forecast_objects)
-            results["ensemble"] = {
-                "status": "ok",
-                "points": len(forecast_objects),
-                "metrics": None,
-            }
+        raise HTTPException(status_code=503, detail="Models not loaded yet")
+    
+    # Check if generation is already in progress
+    if _generation_state["in_progress"]:
+        elapsed = 0
+        if _generation_state["started_at"]:
+            elapsed = int((datetime.now() - _generation_state["started_at"]).total_seconds())
+        
+        # If generation has been running for more than 5 minutes, allow restart
+        if elapsed > 300:
+            logger.warning(f"Generation appears stuck after {elapsed}s - allowing restart")
+            _generation_state["in_progress"] = False
         else:
-            results["ensemble"] = {"status": "error", "detail": "No individual forecasts to combine"}
-    except Exception as e:
-        results["ensemble"] = {"status": "error", "detail": str(e)}
+            return {
+                "status": "already_generating",
+                "message": f"Forecast generation is already in progress for {_generation_state['horizon']}d horizon ({elapsed}s elapsed). Please wait.",
+                "generated_at": str(date.today()),
+            }
 
-    return {"horizon_days": horizon, "results": results, "generated_at": str(today)}
+    # Check if fresh forecasts already exist
+    today = date.today()
+    existing = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
+    if existing and existing[0].forecast_date == today:
+        return {
+            "status": "already_fresh",
+            "message": f"Today's {horizon}-day forecasts already exist.",
+            "generated_at": str(today),
+        }
+
+    # Start generation in background
+    background_tasks.add_task(_run_generate, horizon)
+    
+    return {
+        "status": "generating",
+        "message": f"Generation started for horizon={horizon}. Poll /forecasts/status?horizon={horizon} to check progress.",
+        "generated_at": str(today),
+    }
+
+
+@router.post("/retrain")
+def retrain_models(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    SEPARATE endpoint for retraining models with latest data.
+    This is where actual model training happens.
+    """
+    if not _models:
+        raise HTTPException(status_code=503, detail="Models not loaded yet")
+    
+    if _generation_state["in_progress"]:
+        return {
+            "status": "already_training",
+            "message": "Training is already in progress. Please wait.",
+        }
+    
+    def _run_retrain():
+        """Background task for model retraining"""
+        _generation_state.update({
+            "in_progress": True,
+            "started_at": datetime.now(),
+            "horizon": None,
+            "error": None,
+        })
+        
+        db_session = SessionLocal()
+        try:
+            logger.info("🔄 Starting model retraining...")
+            rates = crud.get_all_rates_as_dataframe(db_session)
+            
+            if rates.empty:
+                logger.warning("No rate data for retraining")
+                return
+            
+            # Retrain ARIMA
+            if "arima" in _models:
+                try:
+                    logger.info("  Retraining ARIMA...")
+                    _models["arima"].fit(rates)
+                    logger.info("  ✅ ARIMA retrained")
+                except Exception as e:
+                    logger.error(f"  ❌ ARIMA retraining failed: {e}")
+            
+            # Retrain Prophet
+            if "prophet" in _models:
+                try:
+                    logger.info("  Retraining Prophet...")
+                    if hasattr(_models["prophet"], 'refit'):
+                        _models["prophet"].refit(rates)
+                    elif hasattr(_models["prophet"], 'fit'):
+                        df = rates.rename(columns={"date": "ds", "rate": "y"})
+                        df["ds"] = pd.to_datetime(df["ds"])
+                        _models["prophet"].fit(df.sort_values("ds"))
+                    logger.info("  ✅ Prophet retrained")
+                except Exception as e:
+                    logger.error(f"  ❌ Prophet retraining failed: {e}")
+            
+            # Retrain ARIMAX if exists
+            if "arimax" in _models:
+                try:
+                    logger.info("  Retraining ARIMAX...")
+                    _models["arimax"].fit(rates)
+                    logger.info("  ✅ ARIMAX retrained")
+                except Exception as e:
+                    logger.error(f"  ❌ ARIMAX retraining failed: {e}")
+            
+            logger.info("🎯 Model retraining complete")
+            
+        except Exception as e:
+            logger.error(f"❌ Retraining failed: {e}")
+            _generation_state["error"] = str(e)
+        finally:
+            db_session.close()
+            _generation_state.update({
+                "in_progress": False,
+                "completed_at": datetime.now(),
+            })
+    
+    background_tasks.add_task(_run_retrain)
+    return {
+        "status": "training_started",
+        "message": "Model retraining started. Check status endpoint for progress."
+    }
 
 
 @router.get("/all")
 def get_all_model_forecasts(
     horizon: int = Query(default=7),
-    db:      Session = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
+    """
+    Get forecasts from all loaded models for a specific horizon.
+    """
+    # If generation is in progress, return empty with status
+    if _generation_state["in_progress"]:
+        return {
+            "status": "generating",
+            "message": "Forecasts are currently being generated",
+            "models": {}
+        }
+    
     result = {}
-    for model_name in _models.keys():
+    for model_name in _models:
         records = crud.get_latest_forecasts(db, model_name, horizon)
         if records:
             result[model_name] = {
-                "model_name":    model_name,
+                "model_name": model_name,
                 "forecast_date": str(records[0].forecast_date),
-                "horizon_days":  horizon,
+                "horizon_days": horizon,
                 "forecasts": [
                     {
-                        "target_date":    str(r.target_date),
+                        "target_date": str(r.target_date),
                         "predicted_rate": r.predicted_rate,
-                        "lower_bound":    r.lower_bound,
-                        "upper_bound":    r.upper_bound,
+                        "lower_bound": r.lower_bound,
+                        "upper_bound": r.upper_bound,
                     }
                     for r in records
                 ],
             }
+    
     return result
+
+
+@router.get("/generation-status")
+def get_generation_status():
+    """
+    Get current generation state for monitoring.
+    Useful for debugging stuck generations.
+    """
+    elapsed = 0
+    if _generation_state["started_at"] and _generation_state["in_progress"]:
+        elapsed = int((datetime.now() - _generation_state["started_at"]).total_seconds())
+    
+    return {
+        "in_progress": _generation_state["in_progress"],
+        "started_at": str(_generation_state["started_at"]) if _generation_state["started_at"] else None,
+        "horizon": _generation_state["horizon"],
+        "elapsed_seconds": elapsed,
+        "completed_at": str(_generation_state["completed_at"]) if _generation_state["completed_at"] else None,
+        "error": _generation_state["error"],
+        "loaded_models": get_loaded_model_names(),
+    }
