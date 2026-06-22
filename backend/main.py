@@ -18,6 +18,57 @@ logger   = get_logger(__name__)
 settings = get_settings()
 
 
+def auto_train_models():
+    """Train models if they don't exist on startup."""
+    import os
+    from core.logging_config import get_logger
+    logger = get_logger(__name__)
+    
+    artifacts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "ml", "artifacts"))
+    os.makedirs(artifacts_dir, exist_ok=True)
+    
+    arima_path = os.path.join(artifacts_dir, "arima.pkl")
+    prophet_path = os.path.join(artifacts_dir, "prophet.pkl")
+    
+    if os.path.exists(arima_path) and os.path.exists(prophet_path):
+        logger.info("✅ Models already exist, skipping training")
+        return
+    
+    logger.info("🚂 No models found - training now (this takes 2-3 minutes)...")
+    
+    try:
+        from ml.pipeline.loader import load_data
+        df = load_data()
+        logger.info(f"📊 Loaded {len(df)} rows for training")
+        
+        if len(df) < 30:
+            logger.warning(f"⚠️ Not enough data: {len(df)} rows (need 30+)")
+            return
+        
+        if not os.path.exists(arima_path):
+            logger.info("Training ARIMA...")
+            from ml.models.arima_model import ARIMAForecaster
+            arima = ARIMAForecaster()
+            arima.fit(df)
+            arima.save(arima_path)
+            logger.info("✅ ARIMA trained and saved")
+        
+        if not os.path.exists(prophet_path):
+            logger.info("Training Prophet...")
+            from ml.models.prophet_model import ProphetForecaster
+            prophet = ProphetForecaster()
+            prophet.fit(df)
+            prophet.save(prophet_path)
+            logger.info("✅ Prophet trained and saved")
+            
+        logger.info("🎉 Model training complete!")
+            
+    except Exception as e:
+        logger.error(f"❌ Auto-training failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 def load_models() -> dict:
     from ml.models.arima_model    import ARIMAForecaster
     from ml.models.arimax_model   import ARIMAXForecaster
@@ -80,6 +131,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     init_db()
     logger.info("Database tables ready")
+    auto_train_models()
     loaded = load_models()
     set_models(loaded)
     app.state.loaded_models = loaded
