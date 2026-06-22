@@ -53,3 +53,9 @@ build/
 outputs/
 plots/
 reports/
+
+# Virtual Environment (CRITICAL)
+backend/venv/
+.venv/
+venv/
+
