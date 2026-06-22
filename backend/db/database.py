@@ -4,51 +4,34 @@ import os
 import sys
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from core.config import get_settings
 
-settings = get_settings()
+# Try to import settings, fallback to env vars
+try:
+    from core.config import get_settings
+    settings = get_settings()
+    DATABASE_URL = settings.database_url
+except Exception:
+    DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./data/mwk_forecasting.db')
 
-# Fix for Render: Ensure data directory exists
-def get_database_url():
-    """Get database URL with proper path handling for deployment."""
-    db_url = settings.database_url
+# Ensure writable directory for SQLite
+if DATABASE_URL.startswith('sqlite:///'):
+    db_path = DATABASE_URL.replace('sqlite:///', '')
     
-    if db_url.startswith('sqlite:///'):
-        # Extract path from SQLite URL
-        db_path = db_url.replace('sqlite:///', '')
-        
-        # Handle relative paths
+    # Use /tmp in production (always writable)
+    if os.getenv('ENVIRONMENT') == 'production' or os.getenv('RENDER'):
+        DATABASE_URL = 'sqlite:////tmp/data/mwk_forecasting.db'
+        os.makedirs('/tmp/data', exist_ok=True)
+    else:
+        # Local development
         if not os.path.isabs(db_path):
-            # Try multiple possible base directories
-            possible_bases = [
-                os.getcwd(),  # Current working directory
-                os.path.dirname(os.path.abspath(__file__)),  # This file's directory
-                '/opt/render/project/src/backend',  # Render default
-                '/app',  # Docker default
-            ]
-            
-            for base in possible_bases:
-                full_path = os.path.join(base, db_path)
-                db_dir = os.path.dirname(full_path)
-                if os.path.exists(base):
-                    os.makedirs(db_dir, exist_ok=True)
-                    db_url = f'sqlite:///{full_path}'
-                    break
-            else:
-                # Fallback: use /tmp which is always writable on Render
-                db_dir = '/tmp/data'
-                os.makedirs(db_dir, exist_ok=True)
-                db_url = f'sqlite:////tmp/data/mwk_forecasting.db'
-        else:
-            # Absolute path - ensure directory exists
-            db_dir = os.path.dirname(db_path)
-            os.makedirs(db_dir, exist_ok=True)
-    
-    return db_url
+            db_path = os.path.join(os.getcwd(), db_path)
+        db_dir = os.path.dirname(db_path)
+        os.makedirs(db_dir, exist_ok=True)
+        DATABASE_URL = f'sqlite:///{db_path}'
 
-DATABASE_URL = get_database_url()
+print(f"🗄️  Database URL: {DATABASE_URL}")
 
-# Create engine with proper SQLite settings
+# Create engine
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
@@ -57,7 +40,6 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
 def get_db():
@@ -70,9 +52,10 @@ def get_db():
 
 def create_all_tables():
     """Create all database tables."""
-    from db.models import ExchangeRate, MacroIndicator, Forecast, ModelRun, DataFetchLog  # noqa
+    # Import models here to avoid circular imports
+    import db.models  # noqa
     Base.metadata.create_all(bind=engine)
-    print(f"✅ Database tables created at: {DATABASE_URL}")
+    print("✅ Database tables created")
 
 def init_db():
     """Initialize database with tables."""
