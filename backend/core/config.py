@@ -1,13 +1,14 @@
-from pydantic_settings import BaseSettings
-from typing import List
+﻿from pydantic_settings import BaseSettings
+from typing import List, Optional
 from functools import lru_cache
+import os
 
 
 class Settings(BaseSettings):
     app_name: str = "MWK/USD Forecasting System"
     app_version: str = "1.0.0"
-    debug: bool = True
-    environment: str = "development"
+    debug: bool = False
+    environment: str = "production"
 
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -15,9 +16,11 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:3000",
         "http://127.0.0.1:5173",
+        "https://kwachacast.vercel.app",
+        "https://*.vercel.app",
     ]
 
-    database_url: str = "sqlite:///./mwk_forecasting.db"
+    database_url: str = "sqlite:///./data/mwk_forecasting.db"
 
     mlflow_tracking_uri: str = "./mlruns"
     mlflow_experiment_name: str = "mwk_usd_forecasting"
@@ -38,6 +41,11 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         extra = "ignore"
+        
+        # Allow settings to be overridden by environment variables
+        @classmethod
+        def customise_sources(cls, init_settings, env_settings, file_secret_settings):
+            return env_settings, init_settings, file_secret_settings
 
 
 @lru_cache()
