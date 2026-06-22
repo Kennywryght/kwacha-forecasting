@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import asyncio
 import signal
@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from core.config import get_settings
 from core.logging_config import setup_logging, get_logger
-from db.database import create_all_tables
+from db.database import init_db
 from api.routes import rates, forecasts, models, pipeline
 from api.routes.forecasts import set_models
 
@@ -78,7 +78,7 @@ def load_models() -> dict:
 async def lifespan(app: FastAPI):
     # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
-    create_all_tables()
+    init_db()
     logger.info("Database tables ready")
     loaded = load_models()
     set_models(loaded)
