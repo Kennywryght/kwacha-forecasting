@@ -1,0 +1,20 @@
+﻿# Render Deployment Configuration
+# Save this as render.yaml in your project root
+
+services:
+  - type: web
+    name: kwachacast-api
+    env: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port 
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        value: sqlite:///./data/mwk_forecasting.db
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/backend/data
+      sizeGB: 1
