@@ -1,12 +1,55 @@
-﻿.env
+﻿# Virtual Environment
 .venv/
-__pycache__/
+venv/
+backend/venv/
 *.pyc
+__pycache__/
+
+# Database
 *.db
-node_modules/
-dist/
-.vite/
+*.sqlite
+*.sqlite3
+
+# Model artifacts (large files)
 *.pkl
 *.joblib
+*.pt
+*.h5
+*.pb
+ml/artifacts/
 mlruns/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Node
+node_modules/
+frontend/node_modules/
+dist/
+.vite/
+
+# Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Outputs
 outputs/
+plots/
+reports/
