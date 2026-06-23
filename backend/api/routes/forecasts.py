@@ -50,70 +50,58 @@ def _safe_date(d):
 
 
 def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
-    """Adjust forecast dates to ensure they start from start_date and are limited to horizon length."""
+    """Take first 'horizon' predictions without date filtering."""
     dates = raw.get("dates", [])
     predicted = raw.get("predicted", [])
     lower = raw.get("lower_bound", []) or raw.get("lower", [])
     upper = raw.get("upper_bound", []) or raw.get("upper", [])
 
-    # Convert all dates to date objects for comparison
-    clean_dates = []
-    for d in dates:
-        if isinstance(d, str):
-            clean_dates.append(datetime.strptime(d, '%Y-%m-%d').date())
-        elif hasattr(d, 'date'):
-            clean_dates.append(d.date())
-        elif isinstance(d, datetime):
-            clean_dates.append(d.date())
-        else:
-            clean_dates.append(d)
-
-    # Convert start_date to date
-    if isinstance(start_date, str):
-        start_d = datetime.strptime(start_date, '%Y-%m-%d').date()
-    elif hasattr(start_date, 'date'):
-        start_d = start_date.date()
-    elif isinstance(start_date, datetime):
-        start_d = start_date.date()
-    else:
-        start_d = start_date
-
-    # Convert predictions to lists if they're numpy arrays
+    # Convert predictions to lists
     if hasattr(predicted, 'tolist'):
         predicted = predicted.tolist()
     elif hasattr(predicted, 'values'):
         predicted = predicted.values.tolist()
+    predicted = list(predicted) if not isinstance(predicted, list) else predicted
     
     if hasattr(lower, 'tolist'):
         lower = lower.tolist()
     elif hasattr(lower, 'values'):
         lower = lower.values.tolist()
+    lower = list(lower) if not isinstance(lower, list) else lower
     
     if hasattr(upper, 'tolist'):
         upper = upper.tolist()
     elif hasattr(upper, 'values'):
         upper = upper.values.tolist()
+    upper = list(upper) if not isinstance(upper, list) else upper
+
+    # Convert dates to strings
+    clean_dates = []
+    for d in dates:
+        if isinstance(d, str):
+            clean_dates.append(d)
+        elif hasattr(d, 'strftime'):
+            clean_dates.append(d.strftime('%Y-%m-%d'))
+        elif hasattr(d, 'date'):
+            clean_dates.append(d.date().strftime('%Y-%m-%d'))
+        else:
+            clean_dates.append(str(d))
 
     # Pad lower/upper if shorter than predicted
-    if len(lower) < len(predicted):
-        lower = list(lower) + [None] * (len(predicted) - len(lower))
-    if len(upper) < len(predicted):
-        upper = list(upper) + [None] * (len(predicted) - len(upper))
+    while len(lower) < len(predicted):
+        lower.append(None)
+    while len(upper) < len(predicted):
+        upper.append(None)
 
-    filtered = [
-        (d, p, l, u)
-        for d, p, l, u in zip(clean_dates, predicted, lower, upper)
-        if d >= start_d
-    ]
-    filtered = filtered[:horizon]
-
-    if filtered:
-        new_dates, new_pred, new_lower, new_upper = zip(*filtered)
+    # Take first 'horizon' items
+    n = min(horizon, len(clean_dates), len(predicted))
+    
+    if n > 0:
         return {
-            "dates": [d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d) for d in new_dates],
-            "predicted": [float(p) for p in new_pred],
-            "lower_bound": [float(l) if l is not None else None for l in new_lower],
-            "upper_bound": [float(u) if u is not None else None for u in new_upper],
+            "dates": clean_dates[:n],
+            "predicted": [float(p) if p is not None else 0.0 for p in predicted[:n]],
+            "lower_bound": [float(l) if l is not None else None for l in lower[:n]],
+            "upper_bound": [float(u) if u is not None else None for u in upper[:n]],
         }
     return {"dates": [], "predicted": [], "lower_bound": [], "upper_bound": []}
 
@@ -163,7 +151,7 @@ def _run_generate(horizon: int):
                         logger.warning("Prophet has no predict() — skipping")
                         continue
                 else:
-                    # ARIMA, ARIMAX, etc. use forecast()
+                    # ARIMA, ARIMAX, etc.
                     raw = model.predict(horizon)
 
                 adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
@@ -254,7 +242,6 @@ def _run_generate(horizon: int):
         _generation_state["error"] = str(e)
     finally:
         db.close()
-        # Small delay before marking as not in progress (prevents race conditions)
         _generation_state["in_progress"] = False
 
 
@@ -270,7 +257,6 @@ def get_forecast_status(
     Returns is_fresh=true when today's ensemble forecast exists for
     the requested horizon — avoids polling the wrong horizon.
     """
-    # Check generation state first (avoids DB queries during generation)
     if _generation_state["in_progress"]:
         elapsed = 0
         if _generation_state["started_at"]:
@@ -287,13 +273,6 @@ def get_forecast_status(
             "message": f"Generating forecasts for {_generation_state['horizon']}d horizon ({elapsed}s elapsed)..."
         }
     
-    # Check if generation just completed
-    if _generation_state["completed_at"]:
-        time_since_completion = (datetime.now() - _generation_state["completed_at"]).total_seconds()
-        if time_since_completion < 10:
-            # Recently completed - might still be settling
-            pass
-    
     try:
         today = date.today()
         records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
@@ -307,10 +286,8 @@ def get_forecast_status(
             "status": "ready",
         }
         
-        # Add generation error if one occurred
         if _generation_state.get("error"):
             response["last_error"] = _generation_state["error"]
-            # Clear error after reporting it once
             _generation_state["error"] = None
         
         return response
@@ -378,13 +355,11 @@ def generate_forecasts(
     if not _models:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
     
-    # Check if generation is already in progress
     if _generation_state["in_progress"]:
         elapsed = 0
         if _generation_state["started_at"]:
             elapsed = int((datetime.now() - _generation_state["started_at"]).total_seconds())
         
-        # If generation has been running for more than 5 minutes, allow restart
         if elapsed > 300:
             logger.warning(f"Generation appears stuck after {elapsed}s - allowing restart")
             _generation_state["in_progress"] = False
@@ -395,7 +370,6 @@ def generate_forecasts(
                 "generated_at": str(date.today()),
             }
 
-    # Check if fresh forecasts already exist
     today = date.today()
     existing = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
     if existing and existing[0].forecast_date == today:
@@ -405,7 +379,6 @@ def generate_forecasts(
             "generated_at": str(today),
         }
 
-    # Start generation in background
     background_tasks.add_task(_run_generate, horizon)
     
     return {
@@ -451,7 +424,6 @@ def retrain_models(
                 logger.warning("No rate data for retraining")
                 return
             
-            # Retrain ARIMA
             if "arima" in _models:
                 try:
                     logger.info("  Retraining ARIMA...")
@@ -460,7 +432,6 @@ def retrain_models(
                 except Exception as e:
                     logger.error(f"  ❌ ARIMA retraining failed: {e}")
             
-            # Retrain Prophet
             if "prophet" in _models:
                 try:
                     logger.info("  Retraining Prophet...")
@@ -474,7 +445,6 @@ def retrain_models(
                 except Exception as e:
                     logger.error(f"  ❌ Prophet retraining failed: {e}")
             
-            # Retrain ARIMAX if exists
             if "arimax" in _models:
                 try:
                     logger.info("  Retraining ARIMAX...")
@@ -510,7 +480,6 @@ def get_all_model_forecasts(
     """
     Get forecasts from all loaded models for a specific horizon.
     """
-    # If generation is in progress, return empty with status
     if _generation_state["in_progress"]:
         return {
             "status": "generating",
@@ -544,7 +513,6 @@ def get_all_model_forecasts(
 def get_generation_status():
     """
     Get current generation state for monitoring.
-    Useful for debugging stuck generations.
     """
     elapsed = 0
     if _generation_state["started_at"] and _generation_state["in_progress"]:
