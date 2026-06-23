@@ -216,7 +216,7 @@ class ARIMAXForecaster(BaseForecaster):
             # Store residuals
             self.residuals = self.fitted_model.resid
             
-            # FIX: Handle both numpy array and list cases
+            # Handle both numpy array and list cases
             if isinstance(self.residuals, np.ndarray):
                 self._residuals = self.residuals.tolist()
             elif isinstance(self.residuals, list):
@@ -253,7 +253,7 @@ class ARIMAXForecaster(BaseForecaster):
 
             self.residuals = self.fitted_model.resid
             
-            # FIX: Handle both numpy array and list cases
+            # Handle both numpy array and list cases
             if isinstance(self.residuals, np.ndarray):
                 self._residuals = self.residuals.tolist()
             elif isinstance(self.residuals, list):
@@ -284,7 +284,6 @@ class ARIMAXForecaster(BaseForecaster):
 
         try:
             # Use last_exog for forecasting
-            # If we have multiple exogenous variables, repeat the last values
             if self.last_exog is not None:
                 future_exog = np.array([self.last_exog] * horizon)
             else:
@@ -296,20 +295,18 @@ class ARIMAXForecaster(BaseForecaster):
             )
 
             predicted_raw = forecast.predicted_mean
-    if hasattr(predicted_raw, 'values'):
-        predicted = predicted_raw.values
-    elif hasattr(predicted_raw, 'tolist'):
-        predicted = predicted_raw.tolist()
-    else:
-        predicted = list(predicted_raw)
+            if hasattr(predicted_raw, 'values'):
+                predicted = predicted_raw.values
+            elif hasattr(predicted_raw, 'tolist'):
+                predicted = predicted_raw.tolist()
+            else:
+                predicted = list(predicted_raw)
+            
             conf_int = forecast.conf_int()
 
             if isinstance(conf_int, pd.DataFrame):
                 lower = conf_int.iloc[:, 0].tolist()
                 upper = conf_int.iloc[:, 1].tolist()
-            elif hasattr(conf_int, 'values'):
-                lower = conf_int[:, 0].tolist() if hasattr(conf_int[:, 0], 'tolist') else list(conf_int[:, 0])
-                upper = conf_int[:, 1].tolist() if hasattr(conf_int[:, 1], 'tolist') else list(conf_int[:, 1])
             else:
                 lower = list(conf_int[:, 0])
                 upper = list(conf_int[:, 1])
@@ -369,7 +366,7 @@ class ARIMAXForecaster(BaseForecaster):
         self.fitted_model = data.get("model")
         self.residuals = data.get("residuals", [])
         
-        # FIX: Handle both numpy array and list cases
+        # Handle both numpy array and list cases
         if isinstance(self.residuals, np.ndarray):
             self._residuals = self.residuals.tolist()
         elif isinstance(self.residuals, list):
