@@ -1,4 +1,4 @@
-"""ARIMA model implementation for time series forecasting.
+﻿"""ARIMA model implementation for time series forecasting.
 
 This module provides a robust ARIMA implementation with:
 - Auto-detection of optimal order
@@ -285,8 +285,8 @@ class ARIMAForecaster(BaseForecaster):
                 lower = conf_int.iloc[:, 0].tolist()
                 upper = conf_int.iloc[:, 1].tolist()
             else:
-                lower = conf_int[:, 0].tolist() if hasattr(conf_int[:, 0], 'tolist') else list(conf_int[:, 0])
-                upper = conf_int[:, 1].tolist() if hasattr(conf_int[:, 1], 'tolist') else list(conf_int[:, 1])
+                lower = list(conf_int[:, 0])
+                upper = list(conf_int[:, 1])
 
             # Generate dates
             dates = self._generate_dates(self.last_date, horizon)
