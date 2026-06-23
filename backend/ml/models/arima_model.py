@@ -272,12 +272,13 @@ class ARIMAForecaster(BaseForecaster):
             forecast = self.fitted_model.get_forecast(steps=horizon)
 
             predicted_raw = forecast.predicted_mean
-    if hasattr(predicted_raw, 'values'):
-        predicted = predicted_raw.values
-    elif hasattr(predicted_raw, 'tolist'):
-        predicted = predicted_raw.tolist()
-    else:
-        predicted = list(predicted_raw)
+            if hasattr(predicted_raw, 'values'):
+                predicted = predicted_raw.values
+            elif hasattr(predicted_raw, 'tolist'):
+                predicted = predicted_raw.tolist()
+            else:
+                predicted = list(predicted_raw)
+            
             conf_int = forecast.conf_int()
 
             # Extract confidence intervals
