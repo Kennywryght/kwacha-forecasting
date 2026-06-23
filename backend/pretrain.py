@@ -15,6 +15,12 @@ if len(rates) > 30:
     df['date'] = pd.to_datetime(df['date'])
     print(f'Loaded {len(df)} rows from database ({df["date"].min().date()} to {df["date"].max().date()})')
     
+    # Use feature engineer to create all features for ARIMAX
+    print('Engineering features...')
+    from ml.pipeline.feature_engineer import engineer_features
+    df = engineer_features(df, verbose=False)
+    print(f'Features created: {df.shape[1]} columns')
+    
     print(f'Training ARIMA on {len(df)} rows...')
     from ml.models.arima_model import ARIMAForecaster
     arima = ARIMAForecaster(use_auto_order=True, max_p=2, max_q=2)
