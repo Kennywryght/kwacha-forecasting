@@ -3,22 +3,21 @@ sys.path.insert(0, '.')
 import pandas as pd
 import numpy as np
 
-# Find CSV
-csv_paths = ['data/raw/mwk_usd_final_dataset.csv', '../data/raw/mwk_usd_final_dataset.csv']
-df = None
-for p in csv_paths:
-    if os.path.exists(p):
-        df = pd.read_csv(p)
-        dc = [c for c in df.columns if c.lower()=='date'][0]
-        rc = [c for c in df.columns if c.lower() in ['rate','mwk_usd']][0]
-        df = df.rename(columns={dc: 'date', rc: 'rate'})
-        df['date'] = pd.to_datetime(df['date'])
-        break
+# Load from database (has projected data to today)
+from db.database import SessionLocal
+from db.models import ExchangeRate
+db = SessionLocal()
+rates = db.query(ExchangeRate).order_by(ExchangeRate.date.asc()).all()
+db.close()
 
-if df is not None and len(df) > 30:
+if len(rates) > 30:
+    df = pd.DataFrame([{'date': r.date, 'rate': r.rate} for r in rates])
+    df['date'] = pd.to_datetime(df['date'])
+    print(f'Loaded {len(df)} rows from database ({df["date"].min().date()} to {df["date"].max().date()})')
+    
     print(f'Training ARIMA on {len(df)} rows...')
     from ml.models.arima_model import ARIMAForecaster
-    arima = ARIMAForecaster(use_auto_order=True, max_p=2, max_q=2)  # Faster with lower max
+    arima = ARIMAForecaster(use_auto_order=True, max_p=2, max_q=2)
     arima.fit(df)
     arima.save('ml/artifacts/arima.pkl')
     print('ARIMA saved')
