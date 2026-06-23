@@ -9,11 +9,12 @@ from datetime import date, timedelta
 import pandas as pd
 import numpy as np
 
-# Step 1: Init and seed from CSV
 init_db()
 db = SessionLocal()
+
+# Step 1: Seed from CSV if empty
 count = db.query(func.count(ExchangeRate.id)).scalar()
-print(f'Rows before seed: {count}')
+print(f'Rows before: {count}')
 
 if count == 0:
     paths = ['data/raw/mwk_usd_final_dataset.csv', '../data/raw/mwk_usd_final_dataset.csv']
@@ -32,46 +33,42 @@ if count == 0:
             print(f'Seeded {len(df)} rows')
             break
 
-# Step 2: Add projected data from last real date to today
+# Step 2: ALWAYS add projected data to today
 real_data = db.query(ExchangeRate).filter(
     ExchangeRate.date >= '2024-08-01'
 ).order_by(ExchangeRate.date.asc()).all()
 
-if len(real_data) >= 30:
+if len(real_data) >= 5:
     rates = [float(r.rate) for r in real_data]
     last_rate = rates[-1]
     last_date = real_data[-1].date
     
-    rates_series = pd.Series(rates)
-    trend = rates_series.diff().mean()
-    volatility = rates_series.diff().std()
-    
     print(f'Last real: {last_date} Rate: {last_rate:.2f}')
-    print(f'Trend: {trend:.4f} Vol: {volatility:.4f}')
     
     current_date = last_date + timedelta(days=1)
     today = date.today()
     current_rate = last_rate
     added = 0
+    skipped = 0
     
     while current_date <= today:
-        if current_date.weekday() < 5:
-            base_change = trend
-            random_component = np.random.normal(0, volatility * 0.3)
-            daily_change = base_change + random_component
-            daily_change = max(min(daily_change, current_rate * 0.01), -current_rate * 0.01)
-            current_rate += daily_change
-            current_rate = round(current_rate, 2)
+        if current_date.weekday() < 5:  # Weekday
+            # Small realistic variation
+            change = np.random.normal(0, 0.5)  # Small daily changes
+            current_rate += change
+            current_rate = round(max(current_rate, 100), 2)
             
             existing = db.query(ExchangeRate).filter(ExchangeRate.date == current_date).first()
             if not existing:
                 db.add(ExchangeRate(date=current_date, rate=current_rate, source='projection'))
                 added += 1
+            else:
+                skipped += 1
         
         current_date += timedelta(days=1)
     
     db.commit()
-    print(f'Added {added} projected days')
+    print(f'Added {added} projected days, skipped {skipped} existing')
     print(f'Final rate: {current_rate:.2f}')
 
 total = db.query(func.count(ExchangeRate.id)).scalar()
