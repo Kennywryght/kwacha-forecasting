@@ -127,7 +127,7 @@ class ARIMAForecaster(BaseForecaster):
                     model = ARIMA(
                         series,
                         order=(p, d, q),
-                        trend=self.trend,
+                        trend='n' if self.order[1] > 0 else self.trend,
                         enforce_stationarity=False,
                         enforce_invertibility=False
                     )
@@ -194,7 +194,7 @@ class ARIMAForecaster(BaseForecaster):
             self.fitted_model = ARIMA(
                 y,
                 order=self.order,
-                trend=self.trend,
+                trend='n' if self.order[1] > 0 else self.trend,
                 enforce_stationarity=False,
                 enforce_invertibility=False
             ).fit(method_kwargs={'disp': False})
@@ -232,7 +232,7 @@ class ARIMAForecaster(BaseForecaster):
             self.fitted_model = ARIMA(
                 y,
                 order=self.order,
-                trend=self.trend,
+                trend='n' if self.order[1] > 0 else self.trend,
                 enforce_stationarity=False,
                 enforce_invertibility=False
             ).fit(method_kwargs={'disp': False})
