@@ -50,7 +50,7 @@ def _safe_date(d):
 
 
 def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
-    """Take first 'horizon' predictions without date filtering."""
+    """Take first 'horizon' predictions and convert dates to date objects for SQLite."""
     dates = raw.get("dates", [])
     predicted = raw.get("predicted", [])
     lower = raw.get("lower_bound", []) or raw.get("lower", [])
@@ -75,19 +75,19 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
         upper = upper.values.tolist()
     upper = list(upper) if not isinstance(upper, list) else upper
 
-    # Convert dates to strings
+    # Convert dates to date objects (SQLite requires date objects, not strings)
     clean_dates = []
     for d in dates:
         if isinstance(d, str):
-            clean_dates.append(d)
-        elif hasattr(d, 'strftime'):
-            clean_dates.append(d.strftime('%Y-%m-%d'))
+            clean_dates.append(datetime.strptime(d, '%Y-%m-%d').date())
+        elif isinstance(d, datetime):
+            clean_dates.append(d.date())
         elif hasattr(d, 'date'):
-            clean_dates.append(d.date().strftime('%Y-%m-%d'))
+            clean_dates.append(d.date())
         else:
-            clean_dates.append(str(d))
+            clean_dates.append(d)
 
-    # Pad lower/upper if shorter than predicted
+    # Pad lower/upper
     while len(lower) < len(predicted):
         lower.append(None)
     while len(upper) < len(predicted):
