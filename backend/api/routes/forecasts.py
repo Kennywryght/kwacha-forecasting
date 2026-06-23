@@ -60,10 +60,11 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
     upper = raw.get("upper_bound", []) or raw.get("upper", [])
 
     clean_dates = [_safe_date(d) for d in dates]
+    start_d = _safe_date(start_date) if not isinstance(start_date, date) else start_date
     filtered = [
         (d, p, l, u)
         for d, p, l, u in zip(clean_dates, predicted, lower, upper)
-        if d >= start_date
+        if d >= start_d
     ]
     filtered = filtered[:horizon]
 
@@ -124,7 +125,7 @@ def _run_generate(horizon: int):
                         continue
                 else:
                     # ARIMA, ARIMAX, etc. use forecast()
-                    raw = model.forecast(horizon)
+                    raw = model.predict(horizon)
 
                 adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
                 if not adjusted["dates"]:

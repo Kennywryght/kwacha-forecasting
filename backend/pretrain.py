@@ -29,5 +29,12 @@ if df is not None and len(df) > 30:
     prophet.fit(df)
     prophet.save('ml/artifacts/prophet.pkl')
     print('Prophet saved')
+    
+    print('Training ARIMAX...')
+    from ml.models.arimax_model import ARIMAXForecaster
+    arimax = ARIMAXForecaster()
+    arimax.fit(df)
+    arimax.save('ml/artifacts/arimax.pkl')
+    print('ARIMAX saved')
 else:
     print('Not enough data for training')
