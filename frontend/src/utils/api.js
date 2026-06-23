@@ -1,6 +1,7 @@
 import axios from "axios";
+import { getApiUrl } from "../config";
 
-const API_BASE = "/api/v1";
+const API_BASE = `${getApiUrl()}/api/v1`;
 
 // ── Axios instance with retry logic ────────────────────────────────────────
 const api = axios.create({
@@ -164,15 +165,13 @@ export const getForecasts = {
     }
   },
   
-  // Lightweight status poll
   getStatus: async (horizon = 7) => {
     try {
       const res = await api.get(`/forecasts/status`, {
         params: { horizon },
       });
-      return res.data;  // { is_fresh, status, horizon_days, forecast_date, loaded_models }
+      return res.data;
     } catch (error) {
-      // Don't log 502 as error - it's expected during generation
       if (error.response?.status !== 502) {
         console.error("❌ getStatus error:", error);
       }
@@ -185,7 +184,6 @@ export const getForecasts = {
     }
   },
 
-  // Retrain models (new endpoint)
   retrain: async () => {
     try {
       const res = await api.post(`/forecasts/retrain`);
@@ -197,11 +195,7 @@ export const getForecasts = {
   }
 };
 
-// ── Anomalies ──────────────────────────────────────────────────────────────
-
 export const getAnomalies = async () => [];
-
-// ── Exports ────────────────────────────────────────────────────────────────
 
 export const getRates         = getLatestRate;
 export const fetchHistoryData = fetchHistory;
