@@ -1,54 +1,36 @@
 ﻿import os, sys
-
-# Try to find and seed CSV data
-sys.path.insert(0, '.')
 os.chdir('/opt/render/project/src/backend')
+sys.path.insert(0, '.')
 
 from db.database import init_db, SessionLocal
-from db.models import ExchangeRate
+from db.models import ExchangeRate  # Import the model directly
 from sqlalchemy import func
 import pandas as pd
 
 init_db()
 db = SessionLocal()
 count = db.query(func.count(ExchangeRate.id)).scalar()
-print(f'Current rows: {count}')
+print(f'Rows: {count}')
 
 if count == 0:
-    print('Searching for CSV files...')
-    csv_paths = [
-        'data/raw/mwk_usd_final_dataset.csv',
-        '../data/raw/mwk_usd_final_dataset.csv',
-        'data/processed/mwk_usd_clean.csv',
-        '../data/processed/mwk_usd_clean.csv',
-    ]
-    
-    for p in csv_paths:
+    paths = ['data/raw/mwk_usd_final_dataset.csv', '../data/raw/mwk_usd_final_dataset.csv']
+    for p in paths:
         if os.path.exists(p):
             print(f'Loading: {p}')
             df = pd.read_csv(p)
             date_col = [c for c in df.columns if c.lower()=='date'][0]
             rate_col = [c for c in df.columns if c.lower() in ['rate','mwk_usd']][0]
             df[date_col] = pd.to_datetime(df[date_col])
-            n = 0
             for _, row in df.iterrows():
                 try:
                     db.add(ExchangeRate(date=row[date_col].date(), rate=float(row[rate_col]), source='seed'))
-                    n += 1
-                except:
-                    pass
+                except: pass
             db.commit()
-            print(f'Seeded {n} rows')
+            print(f'Done seeding')
             break
     else:
-        # List filesystem to debug
-        print('CSV not found. Files in /opt/render/project/src/:')
-        for root, dirs, files in os.walk('/opt/render/project/src'):
-            for f in files:
-                if f.endswith('.csv'):
-                    print(f'  {os.path.join(root, f)}')
-else:
-    print(f'Database already has {count} rows')
-
+        print('No CSV found. Listing files:')
+        import subprocess
+        result = subprocess.run(['find', '/opt/render/project/src', '-name', '*.csv'], capture_output=True, text=True)
+        print(result.stdout[:500])
 db.close()
-print('Seed complete')
