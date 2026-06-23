@@ -17,6 +17,7 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "https://kwachacast.vercel.app",
+        "https://kwacha-forecasting.vercel.app",
         "https://*.vercel.app",
     ]
 
@@ -42,7 +43,6 @@ class Settings(BaseSettings):
         env_file_encoding = "utf-8"
         extra = "ignore"
         
-        # Allow settings to be overridden by environment variables
         @classmethod
         def customise_sources(cls, init_settings, env_settings, file_secret_settings):
             return env_settings, init_settings, file_secret_settings
