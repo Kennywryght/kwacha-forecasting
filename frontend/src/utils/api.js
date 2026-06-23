@@ -6,7 +6,7 @@ const API_BASE = `${getApiUrl()}/api/v1`;
 // ── Axios instance with retry logic ────────────────────────────────────────
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000, // 10 second timeout
+  timeout: 3000, // 10 second timeout
 });
 
 // Response interceptor for better error handling
