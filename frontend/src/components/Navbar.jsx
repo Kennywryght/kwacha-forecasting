@@ -23,14 +23,14 @@ export default function Navbar() {
           <span className="text-xl font-bold text-white tracking-tight">
             Kwacha<span className="text-emerald-400">Cast</span>
           </span>
-          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-medium">BETA</span>
+          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-medium">v1.0</span>
         </Link>
 
         {/* DESKTOP LINKS */}
         <div className="hidden md:flex items-center gap-1">
           {links.map(l => {
             const Icon = l.icon
-            const isActive = pathname === l.to || (l.to === '/dashboard' && pathname === '/')
+            const isActive = pathname === l.to
             return (
               <Link
                 key={l.to}
@@ -77,5 +77,5 @@ export default function Navbar() {
         </div>
       )}
     </nav>
-  )
+  );
 }

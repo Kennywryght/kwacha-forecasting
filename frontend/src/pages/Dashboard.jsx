@@ -7,16 +7,19 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Area, ComposedChart, Legend,
 } from "recharts";
-import { AlertCircle, TrendingDown, TrendingUp, Clock, RefreshCw, Loader2, Target, Shield, Zap } from "lucide-react";
+import { AlertCircle, TrendingDown, TrendingUp, Clock, RefreshCw, Loader2, Shield, Zap, Calendar } from "lucide-react";
+
+// Live rate from free API
+const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
 // ── Trust Chart: Last 30 Days Actual vs Forecast ─────────────────────────────
 function TrustChart({ history, forecasts }) {
   if (!history?.length) return null;
-  
+
   const data = history.slice(-30).map((h, i) => ({
-    date: h.date?.slice(5) || h.date, // MM-DD format
-    actual: h.rate,
-    forecasted: forecasts?.prediction?.[i] || null,
+    date: h.date?.slice(5) || h.date,
+    actual: Number(h.rate?.toFixed(2)),
+    forecasted: forecasts?.prediction?.[i] ? Number(forecasts.prediction[i].toFixed(2)) : null,
   }));
 
   return (
@@ -32,8 +35,11 @@ function TrustChart({ history, forecasts }) {
         <ComposedChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} />
-          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }}
+            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]}
+          />
           <Legend />
           <Line type="monotone" dataKey="actual" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual Rate" />
           <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecasted" />
@@ -46,12 +52,12 @@ function TrustChart({ history, forecasts }) {
 // ── Fan Chart ─────────────────────────────────────────────────────────────────
 function FanChart({ forecasts, history }) {
   if (!forecasts?.dates?.length) return null;
-  const histData = history?.slice(-60).map((d) => ({ date: d.date, rate: d.rate })) || [];
+  const histData = history?.slice(-60).map((d) => ({ date: d.date, rate: Number(d.rate?.toFixed(2)) })) || [];
   const fcData = forecasts.dates.map((d, i) => ({
     date: d,
-    predicted: forecasts.prediction[i],
-    lower_80: forecasts.lower_80?.[i] ?? null,
-    upper_80: forecasts.upper_80?.[i] ?? null,
+    predicted: Number(forecasts.prediction[i]?.toFixed(2)),
+    lower_80: forecasts.lower_80?.[i] != null ? Number(forecasts.lower_80[i].toFixed(2)) : null,
+    upper_80: forecasts.upper_80?.[i] != null ? Number(forecasts.upper_80[i].toFixed(2)) : null,
   }));
   const lastHist = histData[histData.length - 1];
   const bridge = lastHist
@@ -65,23 +71,23 @@ function FanChart({ forecasts, history }) {
 
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
-      <div className="flex items-center gap-2 mb-3">
-        <Target className="w-4 h-4 text-orange-400" />
-        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">
-          Forecast Fan (80% Confidence)
-        </h3>
-      </div>
-      <ResponsiveContainer width="100%" height={280}>
+      <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
+        Forecast Fan — 80% Confidence Interval
+      </h3>
+      <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={combined}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-          <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["auto", "auto"]} />
-          <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#e2e8f0" }} />
-          <Area type="monotone" dataKey="upper_80" stroke="none" fill="#f97316" fillOpacity={0.12} />
-          <Area type="monotone" dataKey="lower_80" stroke="none" fill="#f97316" fillOpacity={0.12} />
+          <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["auto", "auto"]} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip
+            contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#e2e8f0" }}
+            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]}
+          />
+          <Area type="monotone" dataKey="upper_80" stroke="none" fill="#f97316" fillOpacity={0.12} name="Upper 80%" />
+          <Area type="monotone" dataKey="lower_80" stroke="none" fill="#f97316" fillOpacity={0.12} name="Lower 80%" />
           <Line type="monotone" dataKey="rate" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual" />
           <Line type="monotone" dataKey="predicted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecast" />
-          {lastHist && <ReferenceLine y={lastHist.rate} stroke="#64748b" strokeDasharray="3 3" />}
+          {lastHist && <ReferenceLine y={lastHist.rate} stroke="#64748b" strokeDasharray="3 3" label={{ value: `${lastHist.rate.toFixed(0)}`, fill: '#64748b', fontSize: 10 }} />}
           <Legend />
         </ComposedChart>
       </ResponsiveContainer>
@@ -93,7 +99,7 @@ function FanChart({ forecasts, history }) {
 function EmptyForecasts({ onGenerate, generating }) {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-12 border border-slate-700/60 backdrop-blur flex flex-col items-center gap-4 text-center">
-      <Zap className="w-14 h-14 text-slate-500" />
+      <Calendar className="w-14 h-14 text-slate-500" />
       <h3 className="text-white font-semibold text-xl">No Forecasts Yet</h3>
       <p className="text-slate-400 text-sm max-w-md">
         Generate today's forecasts to see predictions from ARIMA, ARIMAX, Prophet, and Ensemble models.
@@ -116,6 +122,7 @@ export default function Dashboard() {
   const [generating, setGenerating] = useState(false);
   const [generateMsg, setGenerateMsg] = useState(null);
   const [generateStatus, setGenerateStatus] = useState(null);
+  const [liveRate, setLiveRate] = useState(null);
   const pollRef = useRef(null);
   const attemptsRef = useRef(0);
 
@@ -125,7 +132,27 @@ export default function Dashboard() {
     loadedModelNames, refetch,
   } = useDashboardData(horizon);
 
+  // Fetch live rate from API
+  useEffect(() => {
+    fetch(LIVE_RATE_URL)
+      .then(r => r.json())
+      .then(d => {
+        if (d?.rates?.MWK) {
+          setLiveRate({
+            rate: d.rates.MWK,
+            date: d.time_last_update_utc?.split(' ')[0] || new Date().toISOString().split('T')[0],
+            source: 'Live API',
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => () => clearInterval(pollRef.current), []);
+
+  // Use live rate if available, otherwise fall back to database rate
+  const displayRate = liveRate || latestRate;
+  const rateSource = liveRate ? 'Live (open.er-api.com)' : (latestRate?.source || 'Database');
 
   const stopPolling = () => {
     clearInterval(pollRef.current);
@@ -179,19 +206,23 @@ export default function Dashboard() {
     }
   };
 
-  // ── Derived values ─────────────────────────────────────────────────────────
-  let direction = null, changePct = null;
-  if (latestRate?.rate && forecasts?.prediction?.length) {
-    const future = forecasts.prediction[forecasts.prediction.length - 1];
-    const diff = future - latestRate.rate;
-    direction = diff > 0 ? "up" : "down";
-    changePct = ((diff / latestRate.rate) * 100).toFixed(2);
-  }
+  // ── Calculate forecast changes for all horizons ─────────────────────────────
+  const getForecastChange = (prediction, days) => {
+    if (!displayRate?.rate || !prediction?.length) return null;
+    const futureVal = prediction[Math.min(days - 1, prediction.length - 1)];
+    const diff = futureVal - displayRate.rate;
+    const pct = ((diff / displayRate.rate) * 100).toFixed(2);
+    return { direction: diff > 0 ? "up" : "down", pct };
+  };
 
-  const forecastValue = forecasts?.prediction?.[forecasts.prediction.length - 1]?.toFixed(2) ?? null;
-  const bestModel = metrics.length > 0
-    ? metrics.reduce((best, m) => (!best || (m.mape ?? 999) < (best.mape ?? 999)) ? m : best, null)
-    : null;
+  const nextDayForecast = forecasts?.prediction?.[0]?.toFixed(2) ?? null;
+  const nextDayChange = getForecastChange(forecasts?.prediction, 1);
+
+  const sevenDayForecast = forecasts?.prediction?.[Math.min(6, (forecasts.prediction?.length ?? 1) - 1)]?.toFixed(2) ?? null;
+  const sevenDayChange = getForecastChange(forecasts?.prediction, 7);
+
+  const thirtyDayForecast = forecasts?.prediction?.[Math.min(29, (forecasts.prediction?.length ?? 1) - 1)]?.toFixed(2) ?? null;
+  const thirtyDayChange = getForecastChange(forecasts?.prediction, 30);
 
   const statusBadgeColor =
     generateStatus === "generating" ? "border-blue-500/30 bg-blue-500/10 text-blue-300" :
@@ -247,7 +278,7 @@ export default function Dashboard() {
       {loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="bg-slate-800/60 rounded-2xl h-28 border border-slate-700/60" />
+            <div key={i} className="bg-slate-800/60 rounded-2xl h-32 border border-slate-700/60" />
           ))}
         </div>
       )}
@@ -255,27 +286,59 @@ export default function Dashboard() {
       {/* ── Empty state ── */}
       {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
 
-      {/* ── KPI Cards ── */}
-      {!loading && !noForecasts && (
+      {/* ── Rate & Forecast KPI Cards ── */}
+      {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: "Current Rate", value: latestRate?.rate ? `MWK ${latestRate.rate.toFixed(2)}` : "--", icon: Zap, color: "text-blue-400" },
-            { label: `${horizon}-Day Forecast`, value: forecastValue ? `MWK ${forecastValue}` : "--", change: direction && changePct ? `${direction === "up" ? "+" : ""}${changePct}%` : null, icon: direction === "up" ? TrendingUp : TrendingDown, color: direction === "up" ? "text-green-400" : "text-red-400" },
-            { label: "Models Active", value: loadedModelNames?.length || 0, icon: Target, color: "text-purple-400" },
-            { label: "Best Model", value: bestModel?.model_name?.toUpperCase() || "--", change: bestModel?.mape ? `MAPE: ${bestModel.mape.toFixed(1)}%` : null, icon: Shield, color: "text-emerald-400" },
-          ].map((kpi, idx) => {
-            const Icon = kpi.icon;
-            return (
-              <div key={idx} className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
-                <div className="flex items-start justify-between mb-2">
-                  <p className="text-slate-400 text-xs uppercase tracking-wider">{kpi.label}</p>
-                  <Icon className={`w-5 h-5 ${kpi.color}`} />
-                </div>
-                <p className="text-2xl font-bold text-white">{kpi.value}</p>
-                {kpi.change && <p className={`text-sm font-medium mt-1 ${kpi.color}`}>{kpi.change}</p>}
-              </div>
-            );
-          })}
+          {/* Current Rate */}
+          <div className="bg-gradient-to-br from-blue-900/30 to-slate-800/60 border border-blue-500/20 rounded-2xl p-5 backdrop-blur">
+            <div className="flex items-start justify-between mb-2">
+              <p className="text-slate-400 text-xs uppercase tracking-wider">Current Rate</p>
+              <Zap className="w-5 h-5 text-blue-400" />
+            </div>
+            <p className="text-2xl font-bold text-white">
+              {displayRate?.rate ? `MWK ${displayRate.rate.toFixed(2)}` : "--"}
+            </p>
+            <p className="text-xs text-slate-500 mt-1">{rateSource}</p>
+          </div>
+
+          {/* Next Day Forecast */}
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
+            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">Next Day Forecast</p>
+            <p className="text-2xl font-bold text-white">
+              {nextDayForecast ? `MWK ${nextDayForecast}` : "--"}
+            </p>
+            {nextDayChange && (
+              <p className={`text-sm font-medium mt-1 ${nextDayChange.direction === "up" ? "text-green-400" : "text-red-400"}`}>
+                {nextDayChange.direction === "up" ? "↗" : "↘"} {nextDayChange.pct}%
+              </p>
+            )}
+          </div>
+
+          {/* 7-Day Forecast */}
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
+            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">7-Day Forecast</p>
+            <p className="text-2xl font-bold text-white">
+              {sevenDayForecast ? `MWK ${sevenDayForecast}` : "--"}
+            </p>
+            {sevenDayChange && (
+              <p className={`text-sm font-medium mt-1 ${sevenDayChange.direction === "up" ? "text-green-400" : "text-red-400"}`}>
+                {sevenDayChange.direction === "up" ? "↗" : "↘"} {sevenDayChange.pct}%
+              </p>
+            )}
+          </div>
+
+          {/* 30-Day Forecast */}
+          <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
+            <p className="text-slate-400 text-xs uppercase tracking-wider mb-2">30-Day Forecast</p>
+            <p className="text-2xl font-bold text-white">
+              {thirtyDayForecast ? `MWK ${thirtyDayForecast}` : "--"}
+            </p>
+            {thirtyDayChange && (
+              <p className={`text-sm font-medium mt-1 ${thirtyDayChange.direction === "up" ? "text-green-400" : "text-red-400"}`}>
+                {thirtyDayChange.direction === "up" ? "↗" : "↘"} {thirtyDayChange.pct}%
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -284,34 +347,10 @@ export default function Dashboard() {
         <TrustChart history={history} forecasts={forecasts} />
       )}
 
-      {/* ── Hero Rate Card ── */}
-      {!loading && latestRate && (
-        <div className="bg-gradient-to-br from-slate-800/80 to-slate-800/40 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <p className="text-slate-400 text-xs uppercase tracking-wider">Current Exchange Rate</p>
-              <p className="text-3xl font-bold text-white mt-1">MWK {latestRate.rate.toFixed(2)}</p>
-              <p className="text-slate-500 text-xs mt-1">{latestRate.date} · {latestRate.source || 'Database'}</p>
-            </div>
-            {forecastValue && (
-              <div className="text-right">
-                <p className="text-sm text-slate-400">{horizon}-Day Forecast</p>
-                <p className="text-2xl font-bold text-white">MWK {forecastValue}</p>
-                {direction && changePct && (
-                  <p className={`text-sm font-medium ${direction === "up" ? "text-green-400" : "text-red-400"}`}>
-                    {direction === "up" ? "↗" : "↘"} {changePct}%
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Fan Chart ── */}
       {!loading && !noForecasts && <FanChart forecasts={forecasts} history={history} />}
 
-      {/* ── History + Metrics ── */}
+      {/* ── History + Model Metrics ── */}
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
@@ -320,9 +359,11 @@ export default function Dashboard() {
           </div>
           <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
             <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
-              Model Accuracy
+              Model Performance
               {loadedModelNames.length > 0 && (
-                <span className="ml-2 text-xs text-slate-500 normal-case font-normal">({loadedModelNames.join(", ")})</span>
+                <span className="ml-2 text-xs text-slate-500 normal-case font-normal">
+                  ({loadedModelNames.join(", ")})
+                </span>
               )}
             </h3>
             <ModelMetricsTable metrics={metrics} />
@@ -336,7 +377,7 @@ export default function Dashboard() {
         <div>
           <h3 className="font-semibold text-amber-300 mb-1">Important Disclaimer</h3>
           <p className="text-amber-200/80 text-sm">
-            These forecasts are for informational purposes only. Exchange rates are influenced by many unpredictable factors.
+            These forecasts are for informational purposes only. Exchange rates are influenced by many unpredictable factors. Current rate sourced from open.er-api.com.
           </p>
         </div>
       </div>
