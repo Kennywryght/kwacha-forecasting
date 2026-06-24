@@ -45,8 +45,8 @@ existing = db.query(ExchangeRate).filter(ExchangeRate.date == today).first()
 
 print('Fetching today rate from Google...')
 try:
-    from ml.pipeline.google_rate_fetcher import get_google_rate
-    result = get_google_rate(force_refresh=True)
+    
+    result = fetch_current_rate()
     
     if result and result.get('rate'):
         if existing:
