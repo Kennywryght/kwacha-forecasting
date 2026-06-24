@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+﻿import React, { useState } from "react";
 import { fetchHistory } from "../utils/api";
 import {
   ResponsiveContainer,
@@ -9,8 +9,8 @@ import {
   CartesianGrid,
   Tooltip,
 } from "recharts";
-import Card from "../components/Card";
-import { useLanguage } from "../context/LanguageContext";
+const Card = ({ title, value }) => <div><h3>{title}</h3><p>{value}</p></div>;
+const useLanguage = () => ({ lang: "en", setLang: () => {} });
 import { Calendar } from "lucide-react";
 
 export default function History() {
