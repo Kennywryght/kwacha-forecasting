@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
@@ -9,7 +9,6 @@ from db import crud
 from db.models import ExchangeRate
 from datetime import date, timedelta, datetime
 from typing import Optional
-from ml.pipeline.google_rate_fetcher import get_google_rate
 
 from ml.pipeline.live_fetcher import fetch_current_rate
 from core.logging_config import get_logger
@@ -50,8 +49,8 @@ def get_latest_rate(db: Session = Depends(get_db)):
         }
 
     # 2. Try Google rate first (most accurate)
-    google_rate = get_google_rate()
-    if google_rate and google_rate.get("rate"):
+    # google_rate removed
+    if False:
         today = date.today()
         rate_val = google_rate["rate"]
         
@@ -166,7 +165,6 @@ def get_rate_history(
         ],
     }
 
-
 @router.get("/status")
 def get_data_status(db: Session = Depends(get_db)):
     latest = crud.get_latest_rate(db)
@@ -187,7 +185,7 @@ def get_data_status(db: Session = Depends(get_db)):
 @router.post("/refresh-google")
 def refresh_google_rate(db: Session = Depends(get_db)):
     """Force refresh the exchange rate from Google."""
-    google_rate = get_google_rate(force_refresh=True)
+    # google_rate removed
     
     if not google_rate or not google_rate.get("rate"):
         raise HTTPException(status_code=502, detail="Failed to fetch rate from Google")

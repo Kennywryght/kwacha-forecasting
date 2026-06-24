@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import json
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/models", tags=["Models"])
 def get_model_performance(db: Session = Depends(get_db)):
     # First try the saved metrics JSON (from pretrain.py evaluation)
     metrics_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         'ml', 'artifacts', 'model_metrics.json'
     )
     

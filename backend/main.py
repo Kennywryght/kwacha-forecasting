@@ -112,7 +112,7 @@ def load_models() -> dict:
     try:
         members = {k: v for k, v in loaded.items() if k != "ensemble"}
         if len(members) >= 1:
-            ensemble = EnsembleForecaster(members)
+            ensemble = EnsembleForecaster(members, weights={"arima": 0.5, "arimax": 0.5})
             ens_path = os.path.join(artifacts, "ensemble.pkl")
             if os.path.exists(ens_path):
                 ensemble.load(ens_path)
