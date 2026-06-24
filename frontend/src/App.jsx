@@ -12,28 +12,19 @@ import ApiDocs from "./pages/ApiDocs";
 export default function App() {
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-900 text-white">
-
+      <div className="min-h-screen bg-slate-950 text-white">
         <Navbar />
-
         <main className="pb-12">
-
           <Routes>
-
-            {/* MAIN PAGES */}
-            <Route path="/home" element={<Home />} />
-            <Route path="/" element={<Dashboard />} />
+            {/* HOME IS NOW THE LANDING PAGE */}
+            <Route path="/" element={<Home />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/history" element={<History />} />
             <Route path="/models" element={<Models />} />
-
-            {/* NEW PAGES */}
             <Route path="/about" element={<About />} />
             <Route path="/api-docs" element={<ApiDocs />} />
-
           </Routes>
-
         </main>
-
       </div>
     </BrowserRouter>
   );
