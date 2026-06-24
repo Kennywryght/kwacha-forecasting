@@ -9,6 +9,7 @@ from db import crud
 from db.models import ExchangeRate
 from datetime import date, timedelta, datetime
 from typing import Optional
+from ml.pipeline.google_rate_fetcher import get_google_rate
 
 from ml.pipeline.live_fetcher import fetch_current_rate
 from core.logging_config import get_logger
@@ -24,16 +25,15 @@ _live_rate_cache = {
 }
 CACHE_TTL_SECONDS = 60   # was 600 — reduced so rate stays accurate
 
-
 @router.get("/latest")
 def get_latest_rate(db: Session = Depends(get_db)):
     """
     Returns the most recent exchange rate.
-    Priority: cache (60s) → today's DB row → live fetch → latest DB row (stale).
+    Priority: Google (1h cache) → cache → today's DB → live fetch → latest DB.
     """
     now = datetime.utcnow()
 
-    # 1. Serve from cache if still fresh
+    # 1. Serve from cache if still fresh (60 seconds)
     if (
         _live_rate_cache["rate"]
         and _live_rate_cache["timestamp"]
@@ -49,11 +49,38 @@ def get_latest_rate(db: Session = Depends(get_db)):
             "is_interpolated": False,
         }
 
-    # 2. Try live fetch first — always prefer fresh data
+    # 2. Try Google rate first (most accurate)
+    google_rate = get_google_rate()
+    if google_rate and google_rate.get("rate"):
+        today = date.today()
+        rate_val = google_rate["rate"]
+        
+        # Persist to database
+        try:
+            crud.upsert_rate(db, today, rate_val, source="google")
+        except Exception as e:
+            logger.warning(f"Could not persist Google rate: {e}")
+
+        _live_rate_cache["rate"] = {
+            "date": google_rate.get("date", str(today)),
+            "rate": rate_val,
+            "source": "google",
+        }
+        _live_rate_cache["timestamp"] = now
+        
+        return {
+            "date": google_rate.get("date", str(today)),
+            "rate": rate_val,
+            "source": "google",
+            "stale": False,
+            "daily_return": None,
+            "is_interpolated": False,
+        }
+
+    # 3. Fallback to live API fetchers (open.er-api, exchangerate.host, etc.)
     live_rate = fetch_current_rate()
     if live_rate and live_rate.get("rate"):
         today = date.today()
-        # Persist so the ML pipeline sees today's rate
         try:
             crud.upsert_rate(db, today, live_rate["rate"], source="live")
         except Exception as e:
@@ -74,7 +101,7 @@ def get_latest_rate(db: Session = Depends(get_db)):
             "is_interpolated": False,
         }
 
-    # 3. Live fetch failed — check today's DB row
+    # 4. Check today's DB row
     today = date.today()
     today_record = db.query(ExchangeRate).filter(ExchangeRate.date == today).first()
     if today_record:
@@ -93,12 +120,12 @@ def get_latest_rate(db: Session = Depends(get_db)):
             "stale": False,
         }
 
-    # 4. Fallback to most recent DB record
+    # 5. Fallback to most recent DB record
     record = crud.get_latest_rate(db)
     if not record:
         raise HTTPException(status_code=404, detail="No rates found in database")
 
-    logger.warning(f"Live fetch failed, serving stale rate from {record.date}")
+    logger.warning(f"All fetchers failed, serving stale rate from {record.date}")
     return {
         "date": str(record.date),
         "rate": record.rate,
@@ -107,8 +134,6 @@ def get_latest_rate(db: Session = Depends(get_db)):
         "is_interpolated": record.is_interpolated,
         "stale": True,
     }
-
-
 @router.get("/history")
 def get_rate_history(
     start: Optional[date] = Query(default=None),
@@ -155,4 +180,38 @@ def get_data_status(db: Session = Depends(get_db)):
         "total_records":     total,
         "days_since_update": days_since,
         "is_stale":          days_since > 3,
+    }
+    
+    
+# ── Google Rate Refresh ──────────────────────────────────────────────────────
+@router.post("/refresh-google")
+def refresh_google_rate(db: Session = Depends(get_db)):
+    """Force refresh the exchange rate from Google."""
+    google_rate = get_google_rate(force_refresh=True)
+    
+    if not google_rate or not google_rate.get("rate"):
+        raise HTTPException(status_code=502, detail="Failed to fetch rate from Google")
+    
+    today = date.today()
+    rate_val = google_rate["rate"]
+    
+    # Persist to database
+    try:
+        crud.upsert_rate(db, today, rate_val, source="google")
+    except Exception as e:
+        logger.warning(f"Could not persist Google rate: {e}")
+    
+    _live_rate_cache["rate"] = {
+        "date": str(today),
+        "rate": rate_val,
+        "source": "google",
+    }
+    _live_rate_cache["timestamp"] = datetime.utcnow()
+    
+    return {
+        "status": "ok",
+        "date": str(today),
+        "rate": rate_val,
+        "source": "google",
+        "message": f"Rate refreshed from Google: {rate_val} MWK/USD"
     }
