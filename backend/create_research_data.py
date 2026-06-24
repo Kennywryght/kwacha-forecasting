@@ -1,6 +1,6 @@
 ﻿import os, sys
 sys.path.insert(0, 'backend')
-os.chdir('backend')
+# Already in backend directory
 
 from db.database import SessionLocal
 from db.models import ExchangeRate

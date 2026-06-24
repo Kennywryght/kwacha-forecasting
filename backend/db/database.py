@@ -5,7 +5,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Use backend/data/ for persistence (survives Render restarts)
 DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
 os.makedirs(DB_DIR, exist_ok=True)
-DB_PATH = os.path.join(DB_DIR, 'mwk_forecasting.db')
+# Use seeded database if available, otherwise create new
+SEED_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'seed_data.db')
+if os.path.exists(SEED_DB):
+    DB_PATH = SEED_DB
+    print("Using pre-seeded database with research data")
+else:
+    DB_PATH = os.path.join(DB_DIR, 'mwk_forecasting.db')
 
 DATABASE_URL = f'sqlite:///{DB_PATH}'
 print(f'Database: {DATABASE_URL}')
