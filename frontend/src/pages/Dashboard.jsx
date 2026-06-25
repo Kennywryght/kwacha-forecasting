@@ -9,18 +9,23 @@ import {
 } from "recharts";
 import { AlertCircle, TrendingDown, TrendingUp, Clock, RefreshCw, Loader2, Shield, Zap, Calendar } from "lucide-react";
 
-// Live rate from free API
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
 // ── Trust Chart: Last 30 Days Actual vs Forecast ─────────────────────────────
 function TrustChart({ history, forecasts }) {
   if (!history?.length) return null;
 
-  const data = history.slice(-30).map((h, i) => ({
-    date: h.date?.slice(5) || h.date,
-    actual: Number(h.rate?.toFixed(2)),
-    forecasted: forecasts?.prediction?.[i] ? Number(forecasts.prediction[i].toFixed(2)) : null,
-  }));
+  // Match actual history dates with forecast dates
+  const data = history.slice(-30).map((h) => {
+    // Find matching forecast for this date
+    const fcDate = h.date?.slice(0, 10);
+    const fcIndex = forecasts?.dates?.findIndex(d => String(d).slice(0, 10) === fcDate);
+    return {
+      date: h.date?.slice(5) || h.date,
+      actual: Number(h.rate?.toFixed(2)),
+      forecasted: fcIndex >= 0 ? Number(forecasts.prediction[fcIndex]?.toFixed(2)) : null,
+    };
+  });
 
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
@@ -38,11 +43,11 @@ function TrustChart({ history, forecasts }) {
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip
             contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }}
-            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]}
+            formatter={(v) => v != null ? [`MWK ${Number(v).toFixed(2)}`, undefined] : ['N/A', undefined]}
           />
           <Legend />
           <Line type="monotone" dataKey="actual" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual Rate" />
-          <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecasted" />
+          <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecasted" connectNulls={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -74,6 +79,9 @@ function FanChart({ forecasts, history }) {
       <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
         Forecast Fan — 80% Confidence Interval
       </h3>
+      <p className="text-xs text-slate-500 mb-2">
+        Shows the range where we're 80% confident the rate will fall. Narrow bands = high confidence.
+      </p>
       <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={combined}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -83,10 +91,10 @@ function FanChart({ forecasts, history }) {
             contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#e2e8f0" }}
             formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]}
           />
-          <Area type="monotone" dataKey="upper_80" stroke="none" fill="#f97316" fillOpacity={0.12} name="Upper 80%" />
-          <Area type="monotone" dataKey="lower_80" stroke="none" fill="#f97316" fillOpacity={0.12} name="Lower 80%" />
+          <Area type="monotone" dataKey="upper_80" stroke="#f97316" strokeWidth={1} fill="#f97316" fillOpacity={0.10} name="Upper 80%" />
+          <Area type="monotone" dataKey="lower_80" stroke="#f97316" strokeWidth={1} fill="#f97316" fillOpacity={0.10} name="Lower 80%" />
           <Line type="monotone" dataKey="rate" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual" />
-          <Line type="monotone" dataKey="predicted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecast" />
+          <Line type="monotone" dataKey="predicted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={true} name="Forecast" />
           {lastHist && <ReferenceLine y={lastHist.rate} stroke="#64748b" strokeDasharray="3 3" label={{ value: `${lastHist.rate.toFixed(0)}`, fill: '#64748b', fontSize: 10 }} />}
           <Legend />
         </ComposedChart>
@@ -102,7 +110,7 @@ function EmptyForecasts({ onGenerate, generating }) {
       <Calendar className="w-14 h-14 text-slate-500" />
       <h3 className="text-white font-semibold text-xl">No Forecasts Yet</h3>
       <p className="text-slate-400 text-sm max-w-md">
-        Generate today's forecasts to see predictions from ARIMA, ARIMAX, Prophet, and Ensemble models.
+        Generate today's forecasts to see predictions from ARIMA, ARIMAX, and Ensemble models.
       </p>
       <button
         onClick={onGenerate}
@@ -132,7 +140,18 @@ export default function Dashboard() {
     loadedModelNames, refetch,
   } = useDashboardData(horizon);
 
-  // Fetch live rate from API
+  // Fetch separate forecasts for each horizon
+  const [forecast7d, setForecast7d] = useState(null);
+  const [forecast30d, setForecast30d] = useState(null);
+
+  useEffect(() => {
+    // Fetch 7-day forecast
+    getForecasts.getLatest(7).then(setForecast7d).catch(() => {});
+    // Fetch 30-day forecast
+    getForecasts.getLatest(30).then(setForecast30d).catch(() => {});
+  }, [horizon, forecasts]);
+
+  // Fetch live rate
   useEffect(() => {
     fetch(LIVE_RATE_URL)
       .then(r => r.json())
@@ -150,7 +169,6 @@ export default function Dashboard() {
 
   useEffect(() => () => clearInterval(pollRef.current), []);
 
-  // Use live rate if available, otherwise fall back to database rate
   const displayRate = liveRate || latestRate;
   const rateSource = liveRate ? 'Live (open.er-api.com)' : (latestRate?.source || 'Database');
 
@@ -206,23 +224,25 @@ export default function Dashboard() {
     }
   };
 
-  // ── Calculate forecast changes for all horizons ─────────────────────────────
-  const getForecastChange = (prediction, days) => {
-    if (!displayRate?.rate || !prediction?.length) return null;
-    const futureVal = prediction[Math.min(days - 1, prediction.length - 1)];
+  // ── Calculate forecast changes using SEPARATE forecasts for each horizon ──
+  const getForecastChange = (forecastData, displayRate) => {
+    if (!displayRate?.rate || !forecastData?.prediction?.length) return null;
+    const futureVal = forecastData.prediction[forecastData.prediction.length - 1];
     const diff = futureVal - displayRate.rate;
     const pct = ((diff / displayRate.rate) * 100).toFixed(2);
-    return { direction: diff > 0 ? "up" : "down", pct };
+    return { direction: diff > 0 ? "up" : "down", pct, value: futureVal.toFixed(2) };
   };
 
   const nextDayForecast = forecasts?.prediction?.[0]?.toFixed(2) ?? null;
-  const nextDayChange = getForecastChange(forecasts?.prediction, 1);
+  const nextDayChange = getForecastChange(forecasts, displayRate);
 
-  const sevenDayForecast = forecasts?.prediction?.[Math.min(6, (forecasts.prediction?.length ?? 1) - 1)]?.toFixed(2) ?? null;
-  const sevenDayChange = getForecastChange(forecasts?.prediction, 7);
+  const sevenDayData = forecast7d || forecasts;
+  const sevenDayForecast = sevenDayData?.prediction?.[Math.min(6, (sevenDayData.prediction?.length ?? 1) - 1)]?.toFixed(2) ?? null;
+  const sevenDayChange = getForecastChange(sevenDayData, displayRate);
 
-  const thirtyDayForecast = forecasts?.prediction?.[Math.min(29, (forecasts.prediction?.length ?? 1) - 1)]?.toFixed(2) ?? null;
-  const thirtyDayChange = getForecastChange(forecasts?.prediction, 30);
+  const thirtyDayData = forecast30d || forecasts;
+  const thirtyDayForecast = thirtyDayData?.prediction?.[Math.min(29, (thirtyDayData.prediction?.length ?? 1) - 1)]?.toFixed(2) ?? null;
+  const thirtyDayChange = getForecastChange(thirtyDayData, displayRate);
 
   const statusBadgeColor =
     generateStatus === "generating" ? "border-blue-500/30 bg-blue-500/10 text-blue-300" :
@@ -238,7 +258,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white">Forecast Dashboard</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Ensemble forecasts · ARIMA · ARIMAX · Prophet · MWK/USD
+            Ensemble forecasts · ARIMA · ARIMAX · MWK/USD
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -342,7 +362,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── TRUST CHART: Monthly Actual vs Forecast ── */}
+      {/* ── TRUST CHART ── */}
       {!loading && history?.length > 30 && (
         <TrustChart history={history} forecasts={forecasts} />
       )}
@@ -360,13 +380,13 @@ export default function Dashboard() {
           <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
             <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">
               Model Performance
-              {loadedModelNames.length > 0 && (
+              {loadedModelNames.filter(n => n !== 'prophet').length > 0 && (
                 <span className="ml-2 text-xs text-slate-500 normal-case font-normal">
-                  ({loadedModelNames.join(", ")})
+                  ({loadedModelNames.filter(n => n !== 'prophet').join(", ")})
                 </span>
               )}
             </h3>
-            <ModelMetricsTable metrics={metrics} />
+            <ModelMetricsTable metrics={metrics.filter(m => m.model_name !== 'prophet')} />
           </div>
         </div>
       )}
@@ -377,7 +397,7 @@ export default function Dashboard() {
         <div>
           <h3 className="font-semibold text-amber-300 mb-1">Important Disclaimer</h3>
           <p className="text-amber-200/80 text-sm">
-            These forecasts are for informational purposes only. Exchange rates are influenced by many unpredictable factors. Current rate sourced from open.er-api.com.
+            These forecasts are for informational purposes only. ARIMA & ARIMAX models achieve 0.30% MAPE due to Malawi's managed exchange rate policy. Prophet excluded due to poor performance on pegged currencies.
           </p>
         </div>
       </div>
