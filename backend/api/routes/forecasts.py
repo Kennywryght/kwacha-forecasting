@@ -448,7 +448,10 @@ def retrain_models(
             if "arimax" in _models:
                 try:
                     logger.info("  Retraining ARIMAX...")
-                    _models["arimax"].fit(rates)
+                    # Add engineered features for ARIMAX
+                    from ml.pipeline.feature_engineer import engineer_features
+                    rates_eng = engineer_features(rates.copy(), verbose=False)
+                    _models["arimax"].fit(rates_eng)
                     logger.info("  ✅ ARIMAX retrained")
                 except Exception as e:
                     logger.error(f"  ❌ ARIMAX retraining failed: {e}")
