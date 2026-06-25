@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { TrendingUp, BarChart3, Zap, Shield, ArrowRight, RefreshCw } from 'lucide-react'
 
-// Fetch live rate from free API - no backend needed
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD'
 
 export default function Home() {
@@ -20,14 +19,13 @@ export default function Home() {
         setLiveRate({
           rate: data.rates.MWK,
           date: data.time_last_update_utc?.split(' ')[0] || new Date().toISOString().split('T')[0],
-          source: 'Open Exchange Rates',
+          source: 'Live currency API',
         })
       } else {
         throw new Error('No MWK rate')
       }
     } catch (err) {
       setError('Unable to fetch live rate')
-      // Fallback: try backend
       try {
         const res = await fetch('https://kwachacast-api.onrender.com/api/v1/rates/latest')
         const data = await res.json()
@@ -41,10 +39,10 @@ export default function Home() {
   useEffect(() => { fetchLiveRate() }, [])
 
   const features = [
-    { icon: TrendingUp, title: 'AI-Powered Forecasts', description: 'ARIMA, ARIMAX & Prophet ensemble models trained on 13+ years of MWK/USD data.' },
-    { icon: BarChart3, title: 'Historical Analysis', description: 'Interactive charts from 2013 to present with macroeconomic indicators.' },
-    { icon: Zap, title: 'Live Rate Updates', description: 'Real-time exchange rate from global currency APIs, refreshed on demand.' },
-    { icon: Shield, title: 'Trust & Transparency', description: 'Compare forecasts against actual rates. See model accuracy metrics.' },
+    { icon: TrendingUp, title: 'Daily forecasts', description: 'Next day, 7-day, and 30-day exchange rate predictions updated every business day.' },
+    { icon: BarChart3, title: 'Historical data', description: 'Interactive charts showing MWK/USD rates from 2013 to present.' },
+    { icon: Zap, title: 'Live rate', description: 'Real-time exchange rate so you always know the current value of the Kwacha.' },
+    { icon: Shield, title: 'Proven accuracy', description: 'Our system achieves 0.30% average error — that is within 5 MWK of the actual rate.' },
   ]
 
   return (
@@ -62,15 +60,15 @@ export default function Home() {
                 Kwacha<span className="text-emerald-400">Cast</span>
               </h1>
               <p className="text-slate-400 text-lg leading-relaxed mb-8">
-                Professional exchange rate forecasting for the Malawi Kwacha. 
-                Powered by ensemble machine learning models trained on 13+ years of data.
+                Know where the Kwacha is heading. Get daily exchange rate forecasts 
+                powered by AI, built specifically for Malawi.
               </p>
               <div className="flex flex-wrap gap-4">
                 <Link to="/dashboard" className="bg-emerald-600 hover:bg-emerald-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
-                  Open Dashboard <ArrowRight className="w-4 h-4" />
+                  Open dashboard <ArrowRight className="w-4 h-4" />
                 </Link>
                 <Link to="/about" className="border border-slate-600 hover:border-slate-400 transition px-6 py-3 rounded-xl font-semibold">
-                  Learn More
+                  Learn more
                 </Link>
               </div>
             </div>
@@ -78,7 +76,7 @@ export default function Home() {
             {/* LIVE RATE CARD */}
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-slate-400 text-sm uppercase tracking-wider">Live Exchange Rate</p>
+                <p className="text-slate-400 text-sm uppercase tracking-wider">Live exchange rate</p>
                 <button onClick={fetchLiveRate} className="text-slate-500 hover:text-white transition" title="Refresh">
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
@@ -102,7 +100,7 @@ export default function Home() {
                     <p>Updated: <span className="text-slate-300">{liveRate?.date || '—'}</span></p>
                   </div>
                   <p className="text-xs text-slate-500 mt-4">
-                    * Rate sourced from open.er-api.com. For reference only.
+                    Rate sourced from open.er-api.com. For reference only.
                   </p>
                 </>
               )}
@@ -115,9 +113,9 @@ export default function Home() {
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4">Platform Features</h2>
+            <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">What you can do</h2>
             <p className="text-slate-400 max-w-2xl mx-auto">
-              Built for economists, businesses, and researchers who need reliable Kwacha exchange rate intelligence.
+              Simple tools to help you make better decisions about the Kwacha.
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -126,7 +124,7 @@ export default function Home() {
               return (
                 <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-emerald-500/30 transition-all group">
                   <Icon className="w-10 h-10 text-emerald-500 mb-4 group-hover:scale-110 transition" />
-                  <h3 className="text-lg font-semibold mb-2">{feature.title}</h3>
+                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
                   <p className="text-slate-400 text-sm leading-relaxed">{feature.description}</p>
                 </div>
               )
@@ -139,16 +137,16 @@ export default function Home() {
       <section className="bg-slate-900 border-y border-slate-800 py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Why Trust KwachaCast?</h2>
+            <h2 className="text-3xl font-bold text-white mb-4">Why trust KwachaCast?</h2>
             <p className="text-slate-400 max-w-2xl mx-auto">
-              Our models are continuously evaluated against real market data to ensure accuracy and reliability.
+              Built with real data and proven methods to give you reliable forecasts.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 text-center">
             {[
-              { value: '13+', label: 'Years of Historical Data' },
-              { value: '4', label: 'Ensemble ML Models' },
-              { value: '99.9%', label: 'API Uptime' },
+              { value: '0.30%', label: 'Average error rate' },
+              { value: '13+', label: 'Years of data' },
+              { value: 'Daily', label: 'Forecast updates' },
             ].map((stat, i) => (
               <div key={i}>
                 <p className="text-4xl font-bold text-emerald-400">{stat.value}</p>
@@ -162,12 +160,12 @@ export default function Home() {
       {/* CTA */}
       <section className="py-20">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold mb-4">Ready to Explore the Dashboard?</h2>
+          <h2 className="text-3xl font-bold text-white mb-4">Ready to see the forecasts?</h2>
           <p className="text-slate-400 mb-8">
-            View 7-day and 30-day forecasts, historical trends, and model performance metrics.
+            View daily, weekly, and monthly predictions for the Malawi Kwacha.
           </p>
           <Link to="/dashboard" className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-semibold text-lg transition inline-flex items-center gap-2">
-            Launch Dashboard <ArrowRight className="w-5 h-5" />
+            Open dashboard <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
       </section>
