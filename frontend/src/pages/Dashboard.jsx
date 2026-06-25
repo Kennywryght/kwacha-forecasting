@@ -6,26 +6,28 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine, Area, ComposedChart, Legend,
 } from "recharts";
-import { AlertCircle, TrendingDown, TrendingUp, Clock, RefreshCw, Loader2, Shield, Zap, Calendar, ThumbsUp, Target, DollarSign, Briefcase, Plane, HelpCircle } from "lucide-react";
+import { AlertCircle, TrendingDown, TrendingUp, Clock, RefreshCw, Loader2, Shield, Zap, Calendar, ThumbsUp, Target, DollarSign, Briefcase, Plane, HelpCircle, Info } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
-// ── Mini Sparkline Component ──────────────────────────────────────────────────
-function MiniSparkline({ data, color }) {
+// ── Mini Sparkline ────────────────────────────────────────────────────────────
+function MiniSparkline({ data, color, label }) {
   if (!data?.length) return null;
   return (
-    <ResponsiveContainer width="100%" height={30}>
-      <LineChart data={data}>
-        <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.5} dot={false} />
-      </LineChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={28}>
+        <LineChart data={data}>
+          <Line type="monotone" dataKey="value" stroke={color} strokeWidth={1.5} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+      {label && <p className="text-[10px] text-slate-500 text-center mt-0.5">{label}</p>}
+    </div>
   );
 }
 
 // ── Trust Chart ───────────────────────────────────────────────────────────────
 function TrustChart({ history, forecasts }) {
   if (!history?.length) return null;
-
   const data = history.slice(-30).map((h) => {
     const fcDate = h.date?.slice(0, 10);
     const fcIndex = forecasts?.dates?.findIndex(d => String(d).slice(0, 10) === fcDate);
@@ -49,10 +51,10 @@ function TrustChart({ history, forecasts }) {
           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }}
-            formatter={(v) => v != null ? [`MWK ${Number(v).toFixed(2)}`, undefined] : ['N/A', undefined]} />
+            formatter={(v, name) => [`MWK ${Number(v).toFixed(2)}`, name === 'actual' ? 'Actual rate' : 'Forecasted rate']} />
           <Legend />
           <Line type="monotone" dataKey="actual" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual rate" />
-          <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecasted" connectNulls={false} />
+          <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Forecasted rate" connectNulls={false} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -78,17 +80,23 @@ function FanChart({ forecasts, history }) {
         <Target className="w-4 h-4 text-orange-400" />
         <h3 className="text-sm font-semibold text-slate-300">Forecast outlook — 80% confidence range</h3>
       </div>
-      <p className="text-xs text-slate-500 mb-2">The shaded area shows where we're 80% confident the rate will fall. Narrow band = higher confidence.</p>
+      <p className="text-xs text-slate-500 mb-2">
+        The shaded area shows where we're 80% confident the rate will fall. 
+        Narrow band = higher confidence in the prediction.
+      </p>
       <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={combined}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-          <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["auto", "auto"]} tickFormatter={(v) => v.toFixed(0)} />
+          <YAxis tick={{ fill: "#94a3b8", fontSize: 10 }} domain={["auto", "auto"]} tickFormatter={(v) => `${v.toFixed(0)}`} />
           <Tooltip contentStyle={{ backgroundColor: "#1e293b", border: "none", borderRadius: "8px", color: "#e2e8f0" }}
-            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]} />
-          <Area type="monotone" dataKey="upper_80" stroke="#f97316" strokeWidth={1} fill="#f97316" fillOpacity={0.10} name="Upper range" />
-          <Area type="monotone" dataKey="lower_80" stroke="#f97316" strokeWidth={1} fill="#f97316" fillOpacity={0.10} name="Lower range" />
-          <Line type="monotone" dataKey="rate" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual" />
+            formatter={(v, name) => {
+              const labels = { rate: 'Actual rate (MWK)', predicted: 'Forecast (MWK)', upper_80: 'Upper 80% bound (MWK)', lower_80: 'Lower 80% bound (MWK)' };
+              return [`${Number(v).toFixed(2)}`, labels[name] || name];
+            }} />
+          <Area type="monotone" dataKey="upper_80" stroke="#f97316" strokeWidth={1} fill="#f97316" fillOpacity={0.10} name="Upper 80% bound" />
+          <Area type="monotone" dataKey="lower_80" stroke="#f97316" strokeWidth={1} fill="#f97316" fillOpacity={0.10} name="Lower 80% bound" />
+          <Line type="monotone" dataKey="rate" stroke="#60a5fa" strokeWidth={2} dot={false} name="Actual rate" />
           <Line type="monotone" dataKey="predicted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={true} name="Forecast" />
           {lastHist && <ReferenceLine y={lastHist.rate} stroke="#64748b" strokeDasharray="3 3" />}
           <Legend />
@@ -99,9 +107,10 @@ function FanChart({ forecasts, history }) {
 }
 
 // ── Quick Summary Card ────────────────────────────────────────────────────────
-function QuickSummary({ displayRate, nextDayChange, sevenDayChange, thirtyDayChange }) {
+function QuickSummary({ displayRate, sevenDayChange }) {
   const pct = parseFloat(sevenDayChange?.pct || 0);
   const isUp = sevenDayChange?.direction === "up";
+  const stable = Math.abs(pct) < 0.5;
 
   return (
     <div className="bg-gradient-to-br from-slate-800/80 to-slate-800/40 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
@@ -109,18 +118,16 @@ function QuickSummary({ displayRate, nextDayChange, sevenDayChange, thirtyDayCha
         <HelpCircle className="w-4 h-4 text-blue-400" />
         <h3 className="text-sm font-semibold text-slate-300">What this means for you</h3>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-slate-700/40 rounded-xl p-3">
           <div className="flex items-center gap-2 mb-2">
             <DollarSign className="w-4 h-4 text-yellow-400" />
             <p className="text-xs font-medium text-slate-300">Importers</p>
           </div>
-          <p className="text-sm text-slate-400">
-            {Math.abs(pct) < 0.5 
-              ? "Minimal change expected — stable import costs"
-              : isUp 
-                ? `Import costs may rise ~${Math.abs(pct).toFixed(1)}% — consider early orders`
-                : `Import costs may drop ~${Math.abs(pct).toFixed(1)}% — good time to buy`}
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {stable ? "Minimal change expected — stable import costs ahead." :
+             isUp ? `Costs may rise ~${Math.abs(pct).toFixed(1)}% — consider early orders.` :
+             `Costs may drop ~${Math.abs(pct).toFixed(1)}% — good time to buy.`}
           </p>
         </div>
         <div className="bg-slate-700/40 rounded-xl p-3">
@@ -128,12 +135,10 @@ function QuickSummary({ displayRate, nextDayChange, sevenDayChange, thirtyDayCha
             <Briefcase className="w-4 h-4 text-blue-400" />
             <p className="text-xs font-medium text-slate-300">Businesses</p>
           </div>
-          <p className="text-sm text-slate-400">
-            {Math.abs(pct) < 0.5
-              ? "Stable outlook — no urgent action needed"
-              : isUp
-                ? `Plan for ~${Math.abs(pct).toFixed(1)}% higher forex costs this month`
-                : `Opportunity to save ~${Math.abs(pct).toFixed(1)}% on foreign payments`}
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {stable ? "Stable outlook — no urgent action needed." :
+             isUp ? `Plan for ~${Math.abs(pct).toFixed(1)}% higher forex costs.` :
+             `Save ~${Math.abs(pct).toFixed(1)}% on foreign payments.`}
           </p>
         </div>
         <div className="bg-slate-700/40 rounded-xl p-3">
@@ -141,12 +146,10 @@ function QuickSummary({ displayRate, nextDayChange, sevenDayChange, thirtyDayCha
             <Plane className="w-4 h-4 text-emerald-400" />
             <p className="text-xs font-medium text-slate-300">Travelers</p>
           </div>
-          <p className="text-sm text-slate-400">
-            {Math.abs(pct) < 0.5
-              ? "Exchange rate stable — predictable travel budget"
-              : isUp
-                ? `Your dollar buys ${Math.abs(pct).toFixed(1)}% more Kwacha — good time to travel`
-                : `Kwacha gaining — wait if possible for better rates`}
+          <p className="text-xs text-slate-400 leading-relaxed">
+            {stable ? "Exchange rate stable — predictable travel budget." :
+             isUp ? `Your dollar buys ${Math.abs(pct).toFixed(1)}% more Kwacha.` :
+             `Kwacha gaining — wait for better rates if possible.`}
           </p>
         </div>
       </div>
@@ -155,32 +158,33 @@ function QuickSummary({ displayRate, nextDayChange, sevenDayChange, thirtyDayCha
 }
 
 // ── When to Act Timeline ──────────────────────────────────────────────────────
-function WhenToActTimeline({ nextDayChange, sevenDayChange, thirtyDayChange, horizon }) {
+function WhenToActTimeline({ nextDayChange, sevenDayChange, thirtyDayChange }) {
   const getUrgency = (pct) => {
     const val = Math.abs(parseFloat(pct || 0));
-    if (val < 0.5) return { level: "Low urgency", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" };
-    if (val < 2) return { level: "Monitor closely", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" };
-    return { level: "Take action", color: "bg-red-500/20 text-red-400 border-red-500/30" };
+    if (val < 0.5) return { level: "No urgency", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30", dot: "bg-emerald-400" };
+    if (val < 2) return { level: "Monitor", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30", dot: "bg-yellow-400" };
+    return { level: "Take action", color: "bg-red-500/20 text-red-400 border-red-500/30", dot: "bg-red-400" };
   };
 
   const stages = [
-    { label: "Now", change: nextDayChange?.pct || "0", desc: "Current rate" },
-    { label: "7 days", change: sevenDayChange?.pct || "0", desc: "Short-term outlook" },
-    { label: "30 days", change: thirtyDayChange?.pct || "0", desc: "Monthly trend" },
+    { label: "Today", change: nextDayChange?.pct || "0", desc: "Current snapshot" },
+    { label: "7 days", change: sevenDayChange?.pct || "0", desc: "Short-term trend" },
+    { label: "30 days", change: thirtyDayChange?.pct || "0", desc: "Monthly outlook" },
   ];
 
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4">When to act</h3>
-      <div className="space-y-3">
+      <div className="flex items-center gap-2 mb-4">
+        <Clock className="w-4 h-4 text-purple-400" />
+        <h3 className="text-sm font-semibold text-slate-300">When to act</h3>
+      </div>
+      <div className="space-y-4">
         {stages.map((stage, i) => {
           const urgency = getUrgency(stage.change);
           return (
             <div key={i} className="flex items-center gap-3">
-              <div className="flex items-center gap-2 min-w-[80px]">
-                <div className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-blue-400' : i === 1 ? 'bg-yellow-400' : 'bg-orange-400'}`} />
-                <span className="text-sm text-slate-400">{stage.label}</span>
-              </div>
+              <div className={`w-3 h-3 rounded-full ${urgency.dot}`} />
+              <span className="text-sm text-slate-400 min-w-[60px]">{stage.label}</span>
               <div className="flex-1 h-px bg-slate-700" />
               <span className={`text-xs px-3 py-1 rounded-full border font-medium ${urgency.color}`}>
                 {urgency.level}
@@ -189,11 +193,19 @@ function WhenToActTimeline({ nextDayChange, sevenDayChange, thirtyDayChange, hor
           );
         })}
       </div>
-      <p className="text-xs text-slate-500 mt-4">
-        {Math.abs(parseFloat(thirtyDayChange?.pct || 0)) < 0.5
-          ? "✓ No immediate action needed — the rate is expected to remain stable."
-          : `⚠️ Consider planning ahead — a ${Math.abs(parseFloat(thirtyDayChange?.pct || 0)).toFixed(2)}% change is expected over 30 days.`}
-      </p>
+      <div className="mt-4 pt-3 border-t border-slate-700/50">
+        <div className="flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
+          <p className="text-xs text-slate-500 leading-relaxed">
+            {Math.abs(parseFloat(thirtyDayChange?.pct || 0)) < 0.5
+              ? "The rate is expected to remain stable. No immediate action required for routine transactions."
+              : `A ${Math.abs(parseFloat(thirtyDayChange?.pct || 0)).toFixed(2)}% change is projected over 30 days. ` +
+                (parseFloat(thirtyDayChange?.pct || 0) > 0 
+                  ? "If you need USD, consider buying sooner. If you hold USD, waiting may be beneficial."
+                  : "If you need USD, waiting may save you money. If you hold USD, consider converting sooner.")}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -225,9 +237,9 @@ function KwachaDirection({ direction, changePct, horizon }) {
 
 // ── Confidence Card ───────────────────────────────────────────────────────────
 function ConfidenceCard({ mape, forecasts }) {
-  const spread = forecasts?.upper_80 && forecasts?.lower_80
-    ? (forecasts.upper_80[forecasts.upper_80.length - 1] - forecasts.lower_80[forecasts.lower_80.length - 1]).toFixed(0)
-    : null;
+  const lower = forecasts?.lower_80?.[forecasts.lower_80.length - 1];
+  const upper = forecasts?.upper_80?.[forecasts.upper_80.length - 1];
+  const spread = lower && upper ? (upper - lower).toFixed(0) : null;
   const highConfidence = mape < 1;
   const confidenceLevel = highConfidence ? "High" : mape < 5 ? "Moderate" : "Low";
   const confidenceColor = highConfidence ? "text-emerald-400" : mape < 5 ? "text-yellow-400" : "text-red-400";
@@ -239,16 +251,25 @@ function ConfidenceCard({ mape, forecasts }) {
         <h3 className="text-sm font-semibold text-slate-300">Forecast confidence</h3>
       </div>
       <p className={`text-2xl font-bold ${confidenceColor}`}>{confidenceLevel}</p>
-      <p className="text-sm text-slate-400 mt-2">
-        Our system has a {mape.toFixed(2)}% average error rate.
-        {spread && ` The forecast range spans just ${spread} MWK, indicating strong certainty.`}
-      </p>
+      <div className="text-sm text-slate-400 mt-2 space-y-1">
+        <p>• Average error: <span className="text-slate-300">{mape.toFixed(2)}%</span> (within ~{Math.round(mape * 17)} MWK of actual)</p>
+        {spread && (
+          <p>• 80% confidence range spans <span className="text-slate-300">{spread} MWK</span>
+            {lower && upper && ` (${lower.toFixed(0)} – ${upper.toFixed(0)} MWK/USD)`}
+          </p>
+        )}
+        <p className="text-xs text-slate-500 mt-1">
+          {highConfidence 
+            ? "The narrow range reflects Malawi's managed exchange rate, making predictions highly reliable."
+            : "Some uncertainty is normal in currency markets. The range accounts for potential fluctuations."}
+        </p>
+      </div>
     </div>
   );
 }
 
 // ── Contributing Factors ──────────────────────────────────────────────────────
-function ContributingFactors({ forecasts, history, displayRate, horizon }) {
+function ContributingFactors({ forecasts, history, horizon }) {
   if (!forecasts?.prediction?.length || !history?.length) return null;
   const recentRates = history.slice(-30).map(h => h.rate);
   const recentTrend = recentRates[recentRates.length - 1] - recentRates[0];
@@ -258,35 +279,35 @@ function ContributingFactors({ forecasts, history, displayRate, horizon }) {
   const spread = forecasts.upper_80?.[forecasts.upper_80.length - 1] - forecasts.lower_80?.[forecasts.lower_80.length - 1];
   const factors = [];
 
-  if (Math.abs(recentTrend) < 1) {
-    factors.push({ factor: "Rate stability pattern detected", impact: "High", description: `Extremely stable (avg daily change ${avgDailyChange.toFixed(2)} MWK). Model expects this to continue.` });
+  if (Math.abs(recentTrend) < 0.5) {
+    factors.push({ factor: "Rate stability pattern", impact: "High", desc: `Near-zero movement (${recentTrend.toFixed(2)} MWK net change over 30 days). The model expects this managed stability to continue.` });
   } else if (recentTrend > 0) {
-    factors.push({ factor: "Upward momentum detected", impact: "High", description: `Rate rose ${recentTrend.toFixed(2)} MWK in 30 days. Model extends this trend forward.` });
+    factors.push({ factor: "Gradual upward trend", impact: "High", desc: `The rate rose ${recentTrend.toFixed(2)} MWK over 30 days (avg ${avgDailyChange.toFixed(2)} MWK/day). Model extends this trend.` });
   } else {
-    factors.push({ factor: "Downward correction observed", impact: "High", description: `Rate dropped ${Math.abs(recentTrend).toFixed(2)} MWK recently. Model expects continuation.` });
+    factors.push({ factor: "Slight downward correction", impact: "High", desc: `The rate eased by ${Math.abs(recentTrend).toFixed(2)} MWK recently. Model expects this to persist short-term.` });
   }
 
   if (spread < 50) {
-    factors.push({ factor: "Very high prediction confidence", impact: "High", description: `Narrow range (${spread.toFixed(0)} MWK spread). Historical patterns are consistent.` });
+    factors.push({ factor: "Tight prediction range", impact: "High", desc: `The 80% confidence band is only ${spread.toFixed(0)} MWK wide. This indicates the model is very certain about the forecast.` });
   } else if (spread < 150) {
-    factors.push({ factor: "Moderate prediction certainty", impact: "Medium", description: `Range spans ${spread.toFixed(0)} MWK — normal for currency forecasting.` });
+    factors.push({ factor: "Normal prediction range", impact: "Medium", desc: `The ${spread.toFixed(0)} MWK confidence band is typical for currency forecasting — moderate but manageable uncertainty.` });
   } else {
-    factors.push({ factor: "Elevated uncertainty detected", impact: "Medium", description: `Wide range (${spread.toFixed(0)} MWK). Unusual patterns in recent data.` });
+    factors.push({ factor: "Wider uncertainty band", impact: "Medium", desc: `The ${spread.toFixed(0)} MWK range suggests the model detected some unusual patterns warranting caution.` });
   }
 
-  if (avgDailyChange < 0.5) {
-    factors.push({ factor: "Managed exchange rate confirmed", impact: "High", description: `Near-zero daily volatility (${avgDailyChange.toFixed(3)} MWK/day). Tight central bank management detected.` });
+  if (avgDailyChange < 0.3) {
+    factors.push({ factor: "Central bank stability", impact: "High", desc: `Extremely low daily movement (${avgDailyChange.toFixed(2)} MWK/day). This confirms the Reserve Bank of Malawi's tight management of the exchange rate.` });
   } else {
-    factors.push({ factor: "Above-normal market activity", impact: "Medium", description: `Daily changes averaging ${avgDailyChange.toFixed(2)} MWK suggest increased market activity.` });
+    factors.push({ factor: "Moderate market activity", impact: "Medium", desc: `Daily changes of ${avgDailyChange.toFixed(2)} MWK suggest some market forces at play beyond central bank management.` });
   }
 
   const currentMonth = new Date().getMonth();
   if (currentMonth >= 2 && currentMonth <= 5) {
-    factors.push({ factor: "Tobacco season support", impact: "Medium", description: "Historical data shows Kwacha stabilization during tobacco season (March-June)." });
+    factors.push({ factor: "Tobacco season influence", impact: "Medium", desc: "March–June typically brings foreign currency from tobacco exports, which historically supports the Kwacha." });
   } else if (currentMonth >= 9 && currentMonth <= 11) {
-    factors.push({ factor: "Import-heavy period", impact: "Medium", description: "Historical Q4 patterns show increased forex demand." });
+    factors.push({ factor: "Q4 import pressure", impact: "Medium", desc: "Year-end typically sees increased demand for foreign currency for imports, which can weigh on the Kwacha." });
   } else {
-    factors.push({ factor: "Neutral seasonal period", impact: "Low", description: "No strong seasonal patterns. Forecast relies on recent trend data." });
+    factors.push({ factor: "Neutral seasonal period", impact: "Low", desc: "No strong seasonal pattern detected. The forecast is driven primarily by recent price behavior." });
   }
 
   return (
@@ -294,14 +315,16 @@ function ContributingFactors({ forecasts, history, displayRate, horizon }) {
       <h3 className="text-sm font-semibold text-slate-300 mb-4">What the model found in the data</h3>
       <div className="space-y-3">
         {factors.slice(0, 4).map((f, i) => (
-          <div key={i} className="flex items-start gap-3">
-            <span className={`text-xs px-2 py-0.5 rounded-full mt-0.5 font-medium ${
-              f.impact === 'High' ? 'bg-emerald-500/20 text-emerald-400' : f.impact === 'Medium' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}`}>
-              {f.impact} impact
+          <div key={i} className="flex items-start gap-3 p-3 bg-slate-700/30 rounded-xl">
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+              f.impact === 'High' ? 'bg-emerald-500/20 text-emerald-400' : 
+              f.impact === 'Medium' ? 'bg-yellow-500/20 text-yellow-400' : 
+              'bg-blue-500/20 text-blue-400'}`}>
+              {f.impact}
             </span>
             <div>
               <p className="text-sm text-slate-200 font-medium">{f.factor}</p>
-              <p className="text-xs text-slate-400 mt-0.5">{f.description}</p>
+              <p className="text-xs text-slate-400 mt-0.5 leading-relaxed">{f.desc}</p>
             </div>
           </div>
         ))}
@@ -386,7 +409,6 @@ export default function Dashboard() {
 
   const statusBadgeColor = generateStatus === "generating" ? "border-blue-500/30 bg-blue-500/10 text-blue-300" : generateStatus === "complete" ? "border-green-500/30 bg-green-500/10 text-green-300" : generateStatus === "error" ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-blue-500/30 bg-blue-500/10 text-blue-300";
 
-  // Sparkline data for each KPI
   const historySparkline = history?.slice(-7).map(h => ({ value: h.rate })) || [];
   const forecastSparkline = forecasts?.prediction?.slice(0, 7).map(v => ({ value: v })) || [];
 
@@ -416,46 +438,44 @@ export default function Dashboard() {
       {loading && (<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-pulse">{[...Array(4)].map((_, i) => (<div key={i} className="bg-slate-800/60 rounded-2xl h-40 border border-slate-700/60" />))}</div>)}
       {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
 
-      {/* KPI Cards with Sparklines */}
+      {/* KPI Cards */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-gradient-to-br from-blue-900/30 to-slate-800/60 border border-blue-500/20 rounded-2xl p-5 backdrop-blur">
             <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Current rate</p>
             <p className="text-2xl font-bold text-white">{displayRate?.rate ? `MWK ${displayRate.rate.toFixed(2)}` : "--"}</p>
             <p className="text-xs text-slate-500 mt-1">Live exchange rate</p>
-            <div className="mt-2"><MiniSparkline data={historySparkline} color="#60a5fa" /></div>
+            <div className="mt-2"><MiniSparkline data={historySparkline} color="#60a5fa" label="7-day trend" /></div>
           </div>
           <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
             <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">Next day</p>
             <p className="text-2xl font-bold text-white">{nextDayForecast ? `MWK ${nextDayForecast}` : "--"}</p>
             {nextDayChange && (<p className={`text-sm font-medium mt-1 ${nextDayChange.direction === "up" ? "text-red-400" : "text-emerald-400"}`}>{nextDayChange.direction === "up" ? "↗" : "↘"} {nextDayChange.pct}%</p>)}
-            <div className="mt-2"><MiniSparkline data={forecastSparkline.slice(0,1)} color={nextDayChange?.direction === "up" ? "#f87171" : "#34d399"} /></div>
+            <div className="mt-2"><MiniSparkline data={forecastSparkline.slice(0,1)} color={nextDayChange?.direction === "up" ? "#f87171" : "#34d399"} label="Tomorrow" /></div>
           </div>
           <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
             <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">7-day outlook</p>
             <p className="text-2xl font-bold text-white">{sevenDayForecast ? `MWK ${sevenDayForecast}` : "--"}</p>
             {sevenDayChange && (<p className={`text-sm font-medium mt-1 ${sevenDayChange.direction === "up" ? "text-red-400" : "text-emerald-400"}`}>{sevenDayChange.direction === "up" ? "↗" : "↘"} {sevenDayChange.pct}%</p>)}
-            <div className="mt-2"><MiniSparkline data={forecastSparkline} color={sevenDayChange?.direction === "up" ? "#f87171" : "#34d399"} /></div>
+            <div className="mt-2"><MiniSparkline data={forecastSparkline} color={sevenDayChange?.direction === "up" ? "#f87171" : "#34d399"} label="7-day projection" /></div>
           </div>
           <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
             <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">30-day outlook</p>
             <p className="text-2xl font-bold text-white">{thirtyDayForecast ? `MWK ${thirtyDayForecast}` : "--"}</p>
             {thirtyDayChange && (<p className={`text-sm font-medium mt-1 ${thirtyDayChange.direction === "up" ? "text-red-400" : "text-emerald-400"}`}>{thirtyDayChange.direction === "up" ? "↗" : "↘"} {thirtyDayChange.pct}%</p>)}
-            <div className="mt-2"><MiniSparkline data={[...forecastSparkline, ...forecastSparkline, ...forecastSparkline, ...forecastSparkline]} color={thirtyDayChange?.direction === "up" ? "#f87171" : "#34d399"} /></div>
+            <div className="mt-2"><MiniSparkline data={[...forecastSparkline, ...forecastSparkline, ...forecastSparkline, ...forecastSparkline]} color={thirtyDayChange?.direction === "up" ? "#f87171" : "#34d399"} label="30-day trend" /></div>
           </div>
         </div>
       )}
 
       {/* Quick Summary */}
-      {!loading && !noForecasts && (
-        <QuickSummary displayRate={displayRate} nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} />
-      )}
+      {!loading && !noForecasts && (<QuickSummary displayRate={displayRate} sevenDayChange={sevenDayChange} />)}
 
       {/* Kwacha Direction + When to Act */}
       {!loading && !noForecasts && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <KwachaDirection direction={sevenDayChange?.direction} changePct={sevenDayChange?.pct} horizon={horizon} />
-          <WhenToActTimeline nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} horizon={horizon} />
+          <WhenToActTimeline nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} />
         </div>
       )}
 
@@ -471,7 +491,7 @@ export default function Dashboard() {
       {/* Contributing Factors + History */}
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ContributingFactors forecasts={forecasts} history={history} displayRate={displayRate} horizon={horizon} />
+          <ContributingFactors forecasts={forecasts} history={history} horizon={horizon} />
           <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur">
             <h3 className="text-sm font-semibold text-slate-300 mb-3">Historical trends</h3>
             <HistoryChart history={history} loading={loading} forecasts={forecasts} />
