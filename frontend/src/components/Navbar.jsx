@@ -1,6 +1,6 @@
 ﻿import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Home, LayoutDashboard, History, Cpu, BookOpen, Code, Menu, X } from "lucide-react";
+import { Home, LayoutDashboard, History, BookOpen, Menu, X } from "lucide-react";
 
 export default function Navbar() {
   const { pathname } = useLocation();
@@ -10,8 +10,6 @@ export default function Navbar() {
     { to: "/", label: "Home", icon: Home },
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/history", label: "History", icon: History },
-    { to: "/models", label: "Models", icon: Cpu },
-    { to: "/api-docs", label: "API Docs", icon: Code },
     { to: "/about", label: "About", icon: BookOpen },
   ];
 
@@ -29,8 +27,8 @@ export default function Navbar() {
         {/* DESKTOP LINKS */}
         <div className="hidden md:flex items-center gap-1">
           {links.map(l => {
-            const Icon = l.icon
-            const isActive = pathname === l.to
+            const Icon = l.icon;
+            const isActive = pathname === l.to;
             return (
               <Link
                 key={l.to}
@@ -44,7 +42,7 @@ export default function Navbar() {
                 <Icon className="w-4 h-4" />
                 {l.label}
               </Link>
-            )
+            );
           })}
         </div>
 
@@ -58,8 +56,8 @@ export default function Navbar() {
       {open && (
         <div className="md:hidden border-t border-slate-800 px-4 py-3 space-y-1">
           {links.map(l => {
-            const Icon = l.icon
-            const isActive = pathname === l.to
+            const Icon = l.icon;
+            const isActive = pathname === l.to;
             return (
               <Link
                 key={l.to}
@@ -72,7 +70,7 @@ export default function Navbar() {
                 <Icon className="w-4 h-4" />
                 {l.label}
               </Link>
-            )
+            );
           })}
         </div>
       )}

@@ -16,12 +16,14 @@ export default function App() {
         <Navbar />
         <main className="pb-12">
           <Routes>
-            {/* HOME IS NOW THE LANDING PAGE */}
+            {/* USER-FACING PAGES */}
             <Route path="/" element={<Home />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/history" element={<History />} />
-            <Route path="/models" element={<Models />} />
             <Route path="/about" element={<About />} />
+            
+            {/* HIDDEN PAGES - accessible via direct URL for admin later */}
+            <Route path="/models" element={<Models />} />
             <Route path="/api-docs" element={<ApiDocs />} />
           </Routes>
         </main>
