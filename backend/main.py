@@ -19,7 +19,7 @@ settings = get_settings()
 
 
 def auto_train_models():
-    """Train models if they don't exist on startup."""
+    """Train models if they don't exist on startup. Only runs if .pkl files missing."""
     import os
     from core.logging_config import get_logger
     logger = get_logger(__name__)
@@ -98,26 +98,73 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  ARIMAX not loaded: {e}")
 
-    # ---- Prophet — load via ProphetForecaster so .refit() is available ----
+    # ---- Prophet ----
     try:
         prophet_path = os.path.join(artifacts, "prophet.pkl")
-        prophet = ProphetForecaster()
-        prophet.load(prophet_path)
-        loaded["prophet"] = prophet
-        logger.info("✅ Prophet loaded via ProphetForecaster")
+        if os.path.exists(prophet_path):
+            prophet = ProphetForecaster()
+            prophet.load(prophet_path)
+            loaded["prophet"] = prophet
+            logger.info("✅ Prophet loaded via ProphetForecaster")
+        else:
+            logger.info("ℹ️  Prophet model file not found - skipping")
     except Exception as e:
         logger.warning(f"⚠️  Prophet not loaded: {e}")
 
-    # ---- Ensemble ----
+    # ---- XGBoost (Modern ML) ----
     try:
-        members = {k: v for k, v in loaded.items() if k != "ensemble"}
-        if len(members) >= 1:
-            ensemble = EnsembleForecaster(members, weights={"arima": 0.5, "arimax": 0.5})
-            ens_path = os.path.join(artifacts, "ensemble.pkl")
-            if os.path.exists(ens_path):
-                ensemble.load(ens_path)
+        import joblib
+        xgb_model_path = os.path.join(artifacts, "xgboost_model.joblib")
+        xgb_features_path = os.path.join(artifacts, "xgboost_features.joblib")
+        
+        if os.path.exists(xgb_model_path) and os.path.exists(xgb_features_path):
+            xgb_model = joblib.load(xgb_model_path)
+            xgb_features = joblib.load(xgb_features_path)
+            loaded["xgboost"] = {
+                "model": xgb_model,
+                "features": xgb_features,
+                "is_fitted": True
+            }
+            logger.info("✅ XGBoost loaded")
+        else:
+            logger.info("ℹ️  XGBoost model files not found - skipping")
+    except Exception as e:
+        logger.warning(f"⚠️  XGBoost not loaded: {e}")
+
+    # ---- LightGBM (Modern ML) ----
+    try:
+        import joblib
+        lgb_model_path = os.path.join(artifacts, "lightgbm_model.joblib")
+        lgb_features_path = os.path.join(artifacts, "lightgbm_features.joblib")
+        
+        if os.path.exists(lgb_model_path) and os.path.exists(lgb_features_path):
+            lgb_model = joblib.load(lgb_model_path)
+            lgb_features = joblib.load(lgb_features_path)
+            loaded["lightgbm"] = {
+                "model": lgb_model,
+                "features": lgb_features,
+                "is_fitted": True
+            }
+            logger.info("✅ LightGBM loaded")
+        else:
+            logger.info("ℹ️  LightGBM model files not found - skipping")
+    except Exception as e:
+        logger.warning(f"⚠️  LightGBM not loaded: {e}")
+
+    # ---- Ensemble (ARIMA + ARIMAX only - 50/50) ----
+    try:
+        ensemble_members = {}
+        for name in ["arima", "arimax"]:
+            if name in loaded:
+                ensemble_members[name] = loaded[name]
+        
+        if len(ensemble_members) >= 1:
+            ensemble = EnsembleForecaster(
+                ensemble_members, 
+                weights={name: 1.0/len(ensemble_members) for name in ensemble_members}
+            )
             loaded["ensemble"] = ensemble
-            logger.info(f"✅ Ensemble loaded with members: {list(members.keys())}")
+            logger.info(f"✅ Ensemble loaded with members: {list(ensemble_members.keys())}")
     except Exception as e:
         logger.warning(f"⚠️  Ensemble not loaded: {e}")
 
@@ -152,7 +199,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for now
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
