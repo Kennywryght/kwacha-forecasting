@@ -89,12 +89,12 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  ARIMA not loaded: {e}")
 
-    # ---- ARIMAX ----
+    # ---- ARIMAX (Best Statistical Model - 0.29% MAPE) ----
     try:
         arimax = ARIMAXForecaster()
         arimax.load(os.path.join(artifacts, "arimax.pkl"))
         loaded["arimax"] = arimax
-        logger.info("✅ ARIMAX loaded")
+        logger.info("✅ ARIMAX loaded (best statistical: 0.29% MAPE)")
     except Exception as e:
         logger.warning(f"⚠️  ARIMAX not loaded: {e}")
 
@@ -105,13 +105,13 @@ def load_models() -> dict:
             prophet = ProphetForecaster()
             prophet.load(prophet_path)
             loaded["prophet"] = prophet
-            logger.info("✅ Prophet loaded via ProphetForecaster")
+            logger.info("✅ Prophet loaded")
         else:
             logger.info("ℹ️  Prophet model file not found - skipping")
     except Exception as e:
         logger.warning(f"⚠️  Prophet not loaded: {e}")
 
-    # ---- XGBoost (Modern ML) ----
+    # ---- XGBoost ----
     try:
         import joblib
         xgb_model_path = os.path.join(artifacts, "xgboost_model.joblib")
@@ -125,13 +125,13 @@ def load_models() -> dict:
                 "features": xgb_features,
                 "is_fitted": True
             }
-            logger.info("✅ XGBoost loaded")
+            logger.info("✅ XGBoost loaded (0.37% MAPE)")
         else:
             logger.info("ℹ️  XGBoost model files not found - skipping")
     except Exception as e:
         logger.warning(f"⚠️  XGBoost not loaded: {e}")
 
-    # ---- LightGBM (Modern ML) ----
+    # ---- LightGBM (Best Modern ML - 0.32% MAPE) ----
     try:
         import joblib
         lgb_model_path = os.path.join(artifacts, "lightgbm_model.joblib")
@@ -145,26 +145,41 @@ def load_models() -> dict:
                 "features": lgb_features,
                 "is_fitted": True
             }
-            logger.info("✅ LightGBM loaded")
+            logger.info("✅ LightGBM loaded (best modern ML: 0.32% MAPE)")
         else:
             logger.info("ℹ️  LightGBM model files not found - skipping")
     except Exception as e:
         logger.warning(f"⚠️  LightGBM not loaded: {e}")
 
-    # ---- Ensemble (ARIMA + ARIMAX only - 50/50) ----
+    # ---- Ensemble: ARIMAX (60%) + LightGBM (40%) ----
     try:
         ensemble_members = {}
-        for name in ["arima", "arimax"]:
-            if name in loaded:
-                ensemble_members[name] = loaded[name]
+        weights = {}
+        
+        # ARIMAX - best statistical model
+        if "arimax" in loaded:
+            ensemble_members["arimax"] = loaded["arimax"]
+            weights["arimax"] = 0.6
+        
+        # LightGBM - best modern ML model
+        if "lightgbm" in loaded:
+            ensemble_members["lightgbm"] = loaded["lightgbm"]
+            weights["lightgbm"] = 0.4
+        
+        # Fallback: use ARIMA if ARIMAX not available
+        if not ensemble_members and "arima" in loaded:
+            ensemble_members["arima"] = loaded["arima"]
+            weights["arima"] = 1.0
+        
+        # Normalize weights
+        total_weight = sum(weights.values())
+        if total_weight > 0:
+            weights = {k: v/total_weight for k, v in weights.items()}
         
         if len(ensemble_members) >= 1:
-            ensemble = EnsembleForecaster(
-                ensemble_members, 
-                weights={name: 1.0/len(ensemble_members) for name in ensemble_members}
-            )
+            ensemble = EnsembleForecaster(ensemble_members, weights=weights)
             loaded["ensemble"] = ensemble
-            logger.info(f"✅ Ensemble loaded with members: {list(ensemble_members.keys())}")
+            logger.info(f"✅ Ensemble: {dict(zip(ensemble_members.keys(), [f'{w*100:.0f}%' for w in weights.values()]))}")
     except Exception as e:
         logger.warning(f"⚠️  Ensemble not loaded: {e}")
 
