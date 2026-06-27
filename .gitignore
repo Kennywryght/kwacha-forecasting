@@ -59,3 +59,7 @@ backend/venv/
 .venv/
 venv/
 
+
+# Model files (trained on Render)
+backend/ml/artifacts/*.pkl
+backend/ml/artifacts/*.json
