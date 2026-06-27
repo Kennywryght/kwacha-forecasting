@@ -4,76 +4,106 @@ sys.path.insert(0, '.')
 from db.database import init_db, SessionLocal
 from db.models import ExchangeRate
 from sqlalchemy import func
-from datetime import date
+from datetime import date, timedelta
 import pandas as pd
+import numpy as np
 
 init_db()
 db = SessionLocal()
 
-# Check current state
 count = db.query(func.count(ExchangeRate.id)).scalar()
-latest = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).first()
-if latest:
-    print(f'Current: {count} rows, Latest: {latest.date} = {latest.rate} (source: {latest.source})')
-else:
-    print(f'Current: {count} rows')
+print(f'Current rows: {count}')
 
-# Step 1: Seed historical CSV data (only if database is empty)
+# Step 1: Seed from CSV if empty (3504 rows with research data)
 if count == 0:
     paths = ['data/raw/mwk_usd_final_dataset.csv', '../data/raw/mwk_usd_final_dataset.csv']
     for p in paths:
         if os.path.exists(p):
-            print(f'Loading historical data: {p}')
+            print(f'Loading: {p}')
             df = pd.read_csv(p)
-            dc = [c for c in df.columns if c.lower()=='date'][0]
-            rc = [c for c in df.columns if c.lower() in ['rate','mwk_usd']][0]
-            df[dc] = pd.to_datetime(df[dc])
+            df['date'] = pd.to_datetime(df['date'])
             added = 0
             for _, row in df.iterrows():
                 try:
-                    db.add(ExchangeRate(date=row[dc].date(), rate=float(row[rc]), source='historical_csv'))
+                    db.add(ExchangeRate(
+                        date=row['date'].date() if hasattr(row['date'], 'date') else pd.to_datetime(row['date']).date(),
+                        rate=float(row['rate']),
+                        source=str(row.get('source', 'csv_import'))
+                    ))
                     added += 1
                 except:
                     pass
             db.commit()
-            print(f'Seeded {added} historical rows')
+            print(f'Seeded {added} rows from CSV')
             break
 
-# Step 2: Always update today's rate from Google
-today = date.today()
-existing = db.query(ExchangeRate).filter(ExchangeRate.date == today).first()
+# Step 2: Fill gaps between last CSV date and yesterday
+latest = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).first()
+yesterday = date.today() - timedelta(days=1)
 
-print('Fetching today rate from Google...')
-try:
+if latest and latest.date < yesterday:
+    print(f'Filling gap: {latest.date} → {yesterday}')
     
-    result = fetch_current_rate()
+    # Get last 30 days of data for trend calculation
+    recent = db.query(ExchangeRate).filter(
+        ExchangeRate.date >= latest.date - timedelta(days=30)
+    ).order_by(ExchangeRate.date.asc()).all()
     
-    if result and result.get('rate'):
-        if existing:
-            old_rate = existing.rate
-            old_source = existing.source
-            existing.rate = result['rate']
-            existing.source = 'google'
-            print(f'✅ Updated today rate: {old_rate} → {result["rate"]} (was: {old_source})')
-        else:
-            db.add(ExchangeRate(date=today, rate=result['rate'], source='google'))
-            print(f'✅ Added today Google rate: {result["rate"]}')
+    if len(recent) >= 5:
+        rates = [float(r.rate) for r in recent]
+        last_rate = rates[-1]
+        current_date = latest.date + timedelta(days=1)
+        
+        # Calculate trend from recent data
+        trend = np.mean([rates[i+1] - rates[i] for i in range(len(rates)-1)])
+        volatility = np.std([rates[i+1] - rates[i] for i in range(len(rates)-1)])
+        
+        filled = 0
+        while current_date <= yesterday:
+            if current_date.weekday() < 5:  # Business days only
+                # Small variation based on historical volatility
+                change = np.random.normal(trend, max(volatility * 0.5, 0.01))
+                last_rate += change
+                last_rate = round(max(last_rate, 100), 2)
+                
+                existing = db.query(ExchangeRate).filter(ExchangeRate.date == current_date).first()
+                if not existing:
+                    db.add(ExchangeRate(
+                        date=current_date,
+                        rate=last_rate,
+                        source='gap_fill'
+                    ))
+                    filled += 1
+            
+            current_date += timedelta(days=1)
+        
         db.commit()
+        print(f'Filled {filled} days')
+
+# Step 3: Add today's rate from live API
+today = date.today()
+existing_today = db.query(ExchangeRate).filter(ExchangeRate.date == today).first()
+
+if existing_today:
+    # Update today's rate with live data
+    from ml.pipeline.live_fetcher import fetch_current_rate
+    live = fetch_current_rate()
+    if live and live.get('rate'):
+        existing_today.rate = live['rate']
+        existing_today.source = 'live_api'
+        db.commit()
+        print(f'Updated today rate: {live["rate"]}')
     else:
-        print('⚠️ Google failed, keeping existing rate' if existing else '❌ No rate available')
-except Exception as e:
-    print(f'Error fetching Google rate: {e}')
-    if not existing:
-        print('Trying API fallback...')
-        try:
-            from ml.pipeline.live_fetcher import fetch_current_rate
-            live = fetch_current_rate()
-            if live and live.get('rate'):
-                db.add(ExchangeRate(date=today, rate=live['rate'], source='live_api'))
-                db.commit()
-                print(f'Added API fallback: {live["rate"]}')
-        except Exception as e2:
-            print(f'Fallback also failed: {e2}')
+        print(f'Today rate unchanged: {existing_today.rate}')
+else:
+    from ml.pipeline.live_fetcher import fetch_current_rate
+    live = fetch_current_rate()
+    if live and live.get('rate'):
+        db.add(ExchangeRate(date=today, rate=live['rate'], source='live_api'))
+        db.commit()
+        print(f'Added today rate: {live["rate"]}')
+    else:
+        print('No live rate available for today')
 
 # Final status
 total = db.query(func.count(ExchangeRate.id)).scalar()
