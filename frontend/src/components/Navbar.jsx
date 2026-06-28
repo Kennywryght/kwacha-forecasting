@@ -16,12 +16,11 @@ export default function Navbar() {
   return (
     <nav className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-        {/* BRAND */}
+        {/* BRAND - no v1.0 badge */}
         <Link to="/" className="flex items-center gap-2">
           <span className="text-xl font-bold text-white tracking-tight">
             Kwacha<span className="text-emerald-400">Cast</span>
           </span>
-          <span className="text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-medium">v1.0</span>
         </Link>
 
         {/* DESKTOP LINKS */}

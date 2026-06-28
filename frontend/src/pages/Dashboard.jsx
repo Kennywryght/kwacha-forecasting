@@ -6,22 +6,17 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ComposedChart, Legend,
 } from "recharts";
-import { AlertCircle, TrendingDown, TrendingUp, RefreshCw, Loader2, Shield, Calendar } from "lucide-react";
+import { AlertCircle, RefreshCw, Loader2, Shield, Calendar } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
-// ── Trust & Transparency ─────────────────────────────────────────────────────
 function TrustChart({ history, forecasts }) {
   if (!history?.length) return null;
-  const data = history.slice(-30).map((h, i) => {
-    const fcDate = h.date?.slice(0, 10);
-    const fcIndex = forecasts?.dates?.findIndex(d => String(d).slice(0, 10) === fcDate);
-    return {
-      date: h.date?.slice(5) || h.date,
-      actual: Number(h.rate?.toFixed(2)),
-      forecasted: fcIndex >= 0 ? Number(forecasts.prediction[fcIndex]?.toFixed(2)) : null,
-    };
-  });
+  const data = history.slice(-30).map((h, i) => ({
+    date: h.date?.slice(5) || h.date,
+    actual: Number(h.rate?.toFixed(2)),
+    forecasted: forecasts?.prediction?.[i] ? Number(forecasts.prediction[i]?.toFixed(2)) : null,
+  }));
 
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
@@ -46,7 +41,6 @@ function TrustChart({ history, forecasts }) {
   );
 }
 
-// ── Forecast Outlook (All Horizons) ──────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const horizons = [
     { label: "Next day", data: forecast1d, color: "#34d399" },
@@ -86,7 +80,6 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   );
 }
 
-// ── When to Act ──────────────────────────────────────────────────────────────
 function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange }) {
   const getAdvice = (label, change) => {
     const pct = parseFloat(change?.pct || 0);
@@ -126,7 +119,6 @@ function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange }) {
   );
 }
 
-// ── Empty State ──────────────────────────────────────────────────────────────
 function EmptyForecasts({ onGenerate, generating }) {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-12 border border-slate-700/60 flex flex-col items-center gap-4 text-center">
@@ -142,12 +134,10 @@ function EmptyForecasts({ onGenerate, generating }) {
   );
 }
 
-// ── Main Dashboard ───────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [generating, setGenerating] = useState(false);
   const [generateMsg, setGenerateMsg] = useState(null);
   const [liveRate, setLiveRate] = useState(null);
-  const pollRef = useRef(null);
 
   const { latestRate, forecasts, history, metrics, loading, noForecasts, refetch } = useDashboardData(7);
   const [forecast1d, setForecast1d] = useState(null);
@@ -166,8 +156,6 @@ export default function Dashboard() {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => () => clearInterval(pollRef.current), []);
-
   const displayRate = liveRate || latestRate;
 
   const handleGenerate = async () => {
@@ -178,7 +166,7 @@ export default function Dashboard() {
       await getForecasts.generate(7);
       await getForecasts.generate(30);
       await refetch();
-      setGenerateMsg("✅ Forecasts updated!");
+      setGenerateMsg("Forecasts updated!");
       setTimeout(() => { setGenerating(false); setGenerateMsg(null); }, 2000);
     } catch {
       setGenerateMsg("Failed. Backend may be waking up — try again.");
@@ -200,9 +188,6 @@ export default function Dashboard() {
   const thirtyDayVal = forecast30d?.prediction?.[29]?.toFixed(2) ?? null;
   const thirtyDayChange = getChange(forecast30d);
 
-  const arimaxMetric = metrics?.find(m => m.model_name === 'arimax');
-  const mape = arimaxMetric?.mape || 0.30;
-
   const kpis = [
     { label: "Current rate", value: displayRate?.rate ? `MWK ${displayRate.rate.toFixed(2)}` : "--", change: null },
     { label: "Next day", value: nextDayVal ? `MWK ${nextDayVal}` : "--", change: nextDayChange },
@@ -213,7 +198,6 @@ export default function Dashboard() {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">KwachaCast</h1>
@@ -238,7 +222,6 @@ export default function Dashboard() {
 
       {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
 
-      {/* KPI Cards */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((kpi, i) => (
@@ -255,7 +238,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Forecast Outlook + When to Act */}
       {!loading && !noForecasts && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ForecastOutlook forecast1d={forecast1d} forecast7d={forecast7d} forecast30d={forecast30d} />
@@ -263,7 +245,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Trust + History */}
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {history?.length > 30 && <TrustChart history={history} forecasts={forecast7d || forecasts} />}
@@ -274,11 +255,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Disclaimer */}
       <div className="bg-amber-900/20 border-l-4 border-amber-500 rounded-xl p-4 flex gap-3">
         <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
         <p className="text-amber-200/80 text-sm">
-          Forecasts are for informational purposes. Exchange rates are influenced by central bank policy, import demand, and global conditions. Model accuracy: {mape.toFixed(2)}% MAPE.
+          Forecasts are for informational purposes. Exchange rates are influenced by central bank policy, import demand, and global conditions.
         </p>
       </div>
     </div>
