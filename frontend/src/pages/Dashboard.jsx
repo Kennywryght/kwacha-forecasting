@@ -54,7 +54,7 @@ function TrustChart({ history, forecasts }) {
           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
-            formatter={(v, name) => v != null ? [MWK , name === 'actual' ? 'Actual rate' : 'Our forecast'] : ['N/A', name]} />
+            formatter={(v, name) => v != null ? [`MWK ${Number(v).toFixed(2)}`, name === 'actual' ? 'Actual rate' : 'Our forecast'] : ['N/A', name]} />
           <Legend />
           <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual rate" />
           {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} name="Our forecast" connectNulls={false} />}
