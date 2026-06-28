@@ -98,9 +98,9 @@ export default function Home() {
                 <Link to="/about" className="border border-slate-600 hover:border-slate-400 transition px-6 py-3 rounded-xl font-semibold">
                   {t('learnMore', { default: 'Learn more' })}
                 </Link>
-                {/* PWA Install Button */}
+                {/* PWA Install Button - Now Gray */}
                 {isInstallable && (
-                  <button onClick={handleInstall} className="bg-purple-600 hover:bg-purple-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
+                  <button onClick={handleInstall} className="bg-slate-600 hover:bg-slate-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
                     <Download className="w-4 h-4" /> {t('installApp', { default: 'Install App' })}
                   </button>
                 )}
@@ -197,7 +197,7 @@ export default function Home() {
               {t('installOnPhone', { default: 'Install KwachaCast on your phone for quick access. No app store needed — just tap the button below.' })}
             </p>
             {isInstallable ? (
-              <button onClick={handleInstall} className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition inline-flex items-center gap-2">
+              <button onClick={handleInstall} className="bg-slate-600 hover:bg-slate-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition inline-flex items-center gap-2">
                 <Download className="w-5 h-5" /> {t('installNow', { default: 'Install KwachaCast' })}
               </button>
             ) : (
