@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import io, csv
 from fastapi import Response
@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from db.database import get_db, SessionLocal
 from db import crud
-from db.models import Forecast
+from db.models import Forecast, ExchangeRate
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
