@@ -13,20 +13,16 @@ const fmtDate = (d) => {
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// ── Trust Chart ───────────────────────────────────────────────────────────────
 function TrustChart({ history, forecasts }) {
   if (!history?.length) return null;
   
-  // Convert forecast data to a lookup map by date
   const forecastMap = {};
   if (forecasts?.forecasts) {
-    // New format from /7-day endpoint
     forecasts.forecasts.forEach(f => {
       const d = String(f.target_date).slice(0, 10);
       forecastMap[d] = Number(f.predicted_rate?.toFixed(2));
     });
   } else if (forecasts?.prediction && forecasts?.dates) {
-    // Old format from useDashboardData
     forecasts.dates.forEach((d, i) => {
       const dateStr = String(d).slice(0, 10);
       forecastMap[dateStr] = Number(forecasts.prediction[i]?.toFixed(2));
@@ -54,7 +50,11 @@ function TrustChart({ history, forecasts }) {
           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
-            formatter={(v, name) => v != null ? [`MWK ${Number(v).toFixed(2)}`, name === 'actual' ? 'Actual rate' : 'Our forecast'] : ['N/A', name]} />
+            formatter={(v, name) => { 
+              if (v == null) return ['N/A', name];
+              const label = name === 'actual' ? 'Actual rate' : name === 'forecasted' ? 'Our forecast' : name;
+              return [`MWK ${Number(v).toFixed(2)}`, label];
+            }} />
           <Legend />
           <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual rate" />
           {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} name="Our forecast" connectNulls={false} />}
@@ -64,7 +64,6 @@ function TrustChart({ history, forecasts }) {
   );
 }
 
-// ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const allData = [];
   const seenDates = new Set();
@@ -112,7 +111,6 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   );
 }
 
-// ── What You Should Do ────────────────────────────────────────────────────────
 function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate }) {
   const getAdvice = (label, change) => {
     const pct = parseFloat(change?.pct || 0);
@@ -152,7 +150,6 @@ function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate
   );
 }
 
-// ── Who This Affects ──────────────────────────────────────────────────────────
 function WhoThisAffects({ displayRate, sevenDayChange }) {
   const pct = parseFloat(sevenDayChange?.pct || 0);
   const dir = sevenDayChange?.direction;
@@ -161,26 +158,10 @@ function WhoThisAffects({ displayRate, sevenDayChange }) {
   const isWeakening = dir === "up" && !isStable;
 
   const personas = [
-    { 
-      icon: ShoppingCart, 
-      who: "Buying groceries & goods", 
-      advice: isStable ? "Prices should stay the same this week." : isWeakening ? "Imported goods may cost more soon. Stock up on essentials now." : "Imported goods may get cheaper. Wait a few days to shop."
-    },
-    { 
-      icon: GraduationCap, 
-      who: "Students & parents", 
-      advice: isStable ? "No change expected for school expenses." : isWeakening ? "If you pay fees in USD, pay now before it costs more Kwacha." : "Wait — your Kwacha will stretch further for USD payments."
-    },
-    { 
-      icon: Briefcase, 
-      who: "Business owners", 
-      advice: isStable ? "Stable outlook — plan with confidence." : isWeakening ? `Import costs may rise ~${absPct.toFixed(1)}%. Order inventory early.` : `Import costs may drop ~${absPct.toFixed(1)}%. Delay orders if possible.`
-    },
-    { 
-      icon: Home, 
-      who: "Receiving money from abroad", 
-      advice: isStable ? "Remittance value is stable." : isWeakening ? "Hold USD — it's worth more Kwacha now." : "Convert USD to Kwacha now before the rate drops."
-    },
+    { icon: ShoppingCart, who: "Buying groceries & goods", advice: isStable ? "Prices should stay the same this week." : isWeakening ? "Imported goods may cost more soon. Stock up on essentials now." : "Imported goods may get cheaper. Wait a few days to shop." },
+    { icon: GraduationCap, who: "Students & parents", advice: isStable ? "No change expected for school expenses." : isWeakening ? "If you pay fees in USD, pay now before it costs more Kwacha." : "Wait — your Kwacha will stretch further for USD payments." },
+    { icon: Briefcase, who: "Business owners", advice: isStable ? "Stable outlook — plan with confidence." : isWeakening ? `Import costs may rise ~${absPct.toFixed(1)}%. Order inventory early.` : `Import costs may drop ~${absPct.toFixed(1)}%. Delay orders if possible.` },
+    { icon: Home, who: "Receiving money from abroad", advice: isStable ? "Remittance value is stable." : isWeakening ? "Hold USD — it's worth more Kwacha now." : "Convert USD to Kwacha now before the rate drops." },
   ];
 
   return (
@@ -192,10 +173,7 @@ function WhoThisAffects({ displayRate, sevenDayChange }) {
           return (
             <div key={i} className="bg-slate-700/40 rounded-xl p-3 flex items-start gap-3">
               <Icon className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-medium text-slate-300">{p.who}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{p.advice}</p>
-              </div>
+              <div><p className="text-xs font-medium text-slate-300">{p.who}</p><p className="text-xs text-slate-400 mt-0.5">{p.advice}</p></div>
             </div>
           );
         })}
@@ -204,7 +182,6 @@ function WhoThisAffects({ displayRate, sevenDayChange }) {
   );
 }
 
-// ── Rate Statistics ───────────────────────────────────────────────────────────
 function RateStats({ stats }) {
   if (!stats) return null;
   return (
@@ -220,7 +197,6 @@ function RateStats({ stats }) {
   );
 }
 
-// ── Model Accuracy ────────────────────────────────────────────────────────────
 function AccuracyCard({ accuracy }) {
   if (!accuracy?.comparisons?.length) return null;
   return (
@@ -250,7 +226,6 @@ function EmptyForecasts({ onGenerate, generating }) {
   );
 }
 
-// ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const [generating, setGenerating] = useState(false);
   const [generateMsg, setGenerateMsg] = useState(null);
