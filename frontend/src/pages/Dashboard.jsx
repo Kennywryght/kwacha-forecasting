@@ -1,9 +1,9 @@
 ﻿import React, { useState, useEffect } from "react";
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
-import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts } from "../utils/api";
+import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, get7DayForecast, get30DayForecast } from "../utils/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
-import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane } from "lucide-react";
+import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
@@ -111,23 +111,40 @@ function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate
   );
 }
 
-// ── Who This Affects (NEW - Persona-based) ────────────────────────────────────
+// ── Who This Affects ──────────────────────────────────────────────────────────
 function WhoThisAffects({ displayRate, sevenDayChange }) {
   const pct = parseFloat(sevenDayChange?.pct || 0);
   const dir = sevenDayChange?.direction;
   const absPct = Math.abs(pct);
   const isStable = absPct < 0.3;
+  const isWeakening = dir === "up" && !isStable;
 
   const personas = [
-    { icon: GraduationCap, who: "Students paying fees", advice: isStable ? "No rush — rate is stable." : dir === "up" ? "Pay now before USD costs more." : "Wait a few days for better rates." },
-    { icon: Briefcase, who: "Business importers", advice: isStable ? "Plan with confidence." : dir === "up" ? `Costs may rise ~${absPct.toFixed(1)}%. Order early.` : `Save ~${absPct.toFixed(1)}% by waiting.` },
-    { icon: Plane, who: "Travelers", advice: isStable ? "Stable rates for travel." : dir === "up" ? "Buy USD now for your trip." : "Wait — your Kwacha will go further." },
-    { icon: DollarSign, who: "USD sellers", advice: isStable ? "No change expected." : dir === "up" ? "Hold USD — it's gaining value." : "Sell now before rate drops further." },
+    { 
+      icon: ShoppingCart, 
+      who: "Buying groceries & goods", 
+      advice: isStable ? "Prices should stay the same this week." : isWeakening ? "Imported goods may cost more soon. Stock up on essentials now." : "Imported goods may get cheaper. Wait a few days to shop."
+    },
+    { 
+      icon: GraduationCap, 
+      who: "Students & parents", 
+      advice: isStable ? "No change expected for school expenses." : isWeakening ? "If you pay fees in USD, pay now before it costs more Kwacha." : "Wait — your Kwacha will stretch further for USD payments."
+    },
+    { 
+      icon: Briefcase, 
+      who: "Business owners", 
+      advice: isStable ? "Stable outlook — plan with confidence." : isWeakening ? `Import costs may rise ~${absPct.toFixed(1)}%. Order inventory early.` : `Import costs may drop ~${absPct.toFixed(1)}%. Delay orders if possible.`
+    },
+    { 
+      icon: Home, 
+      who: "Receiving money from abroad", 
+      advice: isStable ? "Remittance value is stable." : isWeakening ? "Hold USD — it's worth more Kwacha now." : "Convert USD to Kwacha now before the rate drops."
+    },
   ];
 
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4">Who this affects</h3>
+      <h3 className="text-sm font-semibold text-slate-300 mb-4">How this affects you</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {personas.map((p, i) => {
           const Icon = p.icon;
@@ -206,11 +223,13 @@ export default function Dashboard() {
   const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
 
   const fetchAllData = async () => {
-    const [summary, stats, acc] = await Promise.all([getForecastSummary(), getRateStats(), getForecastAccuracy()]);
+    const [summary, stats, acc, full7d, full30d] = await Promise.all([
+      getForecastSummary(), getRateStats(), getForecastAccuracy(), get7DayForecast(), get30DayForecast()
+    ]);
     if (summary?.forecasts) {
       setForecast1d(summary.forecasts["1_day"]);
-      setForecast7d(summary.forecasts["7_day"]);
-      setForecast30d(summary.forecasts["30_day"]);
+      setForecast7d(full7d || summary.forecasts["7_day"]);
+      setForecast30d(full30d || summary.forecasts["30_day"]);
       if (summary.current_rate) setLiveRate({ rate: summary.current_rate });
     }
     if (stats) setRateStats(stats);
@@ -286,7 +305,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* NEW: Who This Affects */}
       {!loading && !noForecasts && (
         <WhoThisAffects displayRate={displayRate} sevenDayChange={sevenDayChange} />
       )}
