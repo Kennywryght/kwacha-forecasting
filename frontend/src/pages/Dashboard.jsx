@@ -1,11 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
-import { getForecasts, fetchForecasts } from "../utils/api";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ComposedChart, Legend,
-} from "recharts";
+import { getForecasts, getForecastSummary, get1DayForecast, get7DayForecast, get30DayForecast } from "../utils/api";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
 import { AlertCircle, RefreshCw, Loader2, Shield, Calendar } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
@@ -44,8 +41,10 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   ];
   const allData = [];
   horizons.forEach(h => {
-    if (h.data?.prediction) {
-      h.data.prediction.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.toFixed(2)), horizon: h.label }));
+    if (h.data?.forecasts) {
+      h.data.forecasts.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: h.label }));
+    } else if (h.data?.predicted_rate) {
+      allData.push({ day: 1, value: Number(h.data.predicted_rate?.toFixed(2)), horizon: h.label });
     }
   });
   if (!allData.length) return null;
@@ -118,31 +117,25 @@ export default function Dashboard() {
   const [generating, setGenerating] = useState(false);
   const [generateMsg, setGenerateMsg] = useState(null);
   const [liveRate, setLiveRate] = useState(null);
-  const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
   const [forecast1d, setForecast1d] = useState(null);
   const [forecast7d, setForecast7d] = useState(null);
   const [forecast30d, setForecast30d] = useState(null);
 
-  // Fetch all horizons from the /all endpoint directly
-  useEffect(() => {
-    const fetchAllHorizons = async () => {
-      try {
-        const all1 = await fetchForecasts(); // Gets all models for horizon 7 by default
-        // Use getLatest for specific horizons
-        const [d1, d7, d30] = await Promise.all([
-          getForecasts.getLatest(1),
-          getForecasts.getLatest(7),
-          getForecasts.getLatest(30),
-        ]);
-        if (d1) setForecast1d(d1);
-        if (d7) setForecast7d(d7);
-        if (d30) setForecast30d(d30);
-      } catch (e) {
-        console.log('Waiting for forecast data...');
-      }
-    };
-    fetchAllHorizons();
-  }, [noForecasts]);
+  const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
+
+  // Fetch all horizons using dedicated endpoints
+  const fetchAllHorizons = async () => {
+    const [d1, d7, d30] = await Promise.all([
+      get1DayForecast(),
+      get7DayForecast(),
+      get30DayForecast(),
+    ]);
+    if (d1) setForecast1d(d1);
+    if (d7) setForecast7d(d7);
+    if (d30) setForecast30d(d30);
+  };
+
+  useEffect(() => { fetchAllHorizons(); }, [noForecasts]);
 
   useEffect(() => {
     fetch(LIVE_RATE_URL).then(r => r.json()).then(d => {
@@ -160,15 +153,7 @@ export default function Dashboard() {
       await getForecasts.generate(7);
       await getForecasts.generate(30);
       await refetch();
-      // Refetch after generation
-      const [d1, d7, d30] = await Promise.all([
-        getForecasts.getLatest(1),
-        getForecasts.getLatest(7),
-        getForecasts.getLatest(30),
-      ]);
-      if (d1) setForecast1d(d1);
-      if (d7) setForecast7d(d7);
-      if (d30) setForecast30d(d30);
+      await fetchAllHorizons();
       setGenerateMsg("Forecasts updated!");
       setTimeout(() => { setGenerating(false); setGenerateMsg(null); }, 2000);
     } catch {
@@ -177,19 +162,23 @@ export default function Dashboard() {
     }
   };
 
-  const getChange = (data) => {
-    if (!displayRate?.rate || !data?.prediction?.length) return null;
-    const val = data.prediction[data.prediction.length - 1];
-    const diff = val - displayRate.rate;
+  const getChange = (predictedRate) => {
+    if (!displayRate?.rate || !predictedRate) return null;
+    const diff = predictedRate - displayRate.rate;
     return { direction: diff > 0 ? "up" : "down", pct: ((diff / displayRate.rate) * 100).toFixed(2) };
   };
 
-  const nextDayVal = forecast1d?.prediction?.[0]?.toFixed(2) ?? null;
-  const nextDayChange = getChange(forecast1d);
-  const sevenDayVal = forecast7d?.prediction?.[6]?.toFixed(2) ?? null;
-  const sevenDayChange = getChange(forecast7d);
-  const thirtyDayVal = forecast30d?.prediction?.[29]?.toFixed(2) ?? null;
-  const thirtyDayChange = getChange(forecast30d);
+  // Extract values from dedicated endpoints
+  const nextDayVal = forecast1d?.predicted_rate?.toFixed(2) ?? null;
+  const nextDayChange = forecast1d ? getChange(forecast1d.predicted_rate) : null;
+  
+  const sevenDayForecasts = forecast7d?.forecasts;
+  const sevenDayVal = sevenDayForecasts?.[6]?.predicted_rate?.toFixed(2) ?? null;
+  const sevenDayChange = sevenDayForecasts ? getChange(sevenDayForecasts[6]?.predicted_rate) : null;
+  
+  const thirtyDayForecasts = forecast30d?.forecasts;
+  const thirtyDayVal = thirtyDayForecasts?.[29]?.predicted_rate?.toFixed(2) ?? null;
+  const thirtyDayChange = thirtyDayForecasts ? getChange(thirtyDayForecasts[29]?.predicted_rate) : null;
 
   const kpis = [
     { label: "Current rate", value: displayRate?.rate ? `MWK ${displayRate.rate.toFixed(2)}` : "--", change: null },
