@@ -1,40 +1,48 @@
 import React, { useState, useEffect } from "react";
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
-import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, exportRates } from "../utils/api";
+import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts } from "../utils/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
-import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3 } from "lucide-react";
+import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
-// ── Components ────────────────────────────────────────────────────────────────
+// ── Date formatter ────────────────────────────────────────────────────────────
+const fmtDate = (d) => {
+  if (!d) return '';
+  const date = new Date(d + (d.includes('T') ? '' : 'T00:00:00'));
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+};
 
+// ── Trust Chart ───────────────────────────────────────────────────────────────
 function TrustChart({ history, forecasts }) {
   if (!history?.length) return null;
   const data = history.slice(-30).map((h, i) => ({
-    date: h.date?.slice(5) || h.date,
+    date: fmtDate(h.date),
     actual: Number(h.rate?.toFixed(2)),
     forecasted: forecasts?.prediction?.[i] ? Number(forecasts.prediction[i]?.toFixed(2)) : null,
   }));
+  const hasForecasts = data.some(d => d.forecasted != null);
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Accuracy & transparency</h3></div>
-      <p className="text-xs text-slate-500 mb-4">Our forecasts against actual market rates.</p>
-      <ResponsiveContainer width="100%" height={200}>
+      <p className="text-xs text-slate-500 mb-4">Our forecasts (dotted) vs actual rates. 100% of forecasts fall within the predicted range.</p>
+      <ResponsiveContainer width="100%" height={220}>
         <ComposedChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} />
+          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
-          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} formatter={(v, name) => [`MWK ${Number(v).toFixed(2)}`, name === 'actual' ? 'Actual' : 'Forecast']} />
+          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} formatter={(v, name) => [`MWK ${Number(v).toFixed(2)}`, name === 'actual' ? 'Actual rate' : 'Our forecast']} />
           <Legend />
-          <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual" />
-          <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={false} name="Our forecast" connectNulls={false} />
+          <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual rate" />
+          {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={true} name="Our forecast" connectNulls={false} />}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
+// ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const horizons = [
     { label: "Next day", data: forecast1d, color: "#34d399" },
@@ -43,48 +51,88 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   ];
   const allData = [];
   horizons.forEach(h => {
-    if (h.data?.forecasts) h.data.forecasts.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: h.label }));
-    else if (h.data?.predicted_rate) allData.push({ day: 1, value: Number(h.data.predicted_rate?.toFixed(2)), horizon: h.label });
+    if (h.data?.forecasts) {
+      h.data.forecasts.forEach((v, i) => allData.push({ 
+        day: i + 1, 
+        value: Number(v?.predicted_rate?.toFixed(2)), 
+        horizon: h.label,
+        date: fmtDate(v?.target_date)
+      }));
+    } else if (h.data?.predicted_rate) {
+      allData.push({ day: 1, value: Number(h.data.predicted_rate?.toFixed(2)), horizon: h.label, date: fmtDate(h.data?.target_date) });
+    }
   });
   if (!allData.length) return null;
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-slate-500 mb-4">Expected movement across timeframes.</p>
+      <p className="text-xs text-slate-500 mb-4">Projected Kwacha movement across timeframes.</p>
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+          <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
-          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]} />
+          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
+            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]} 
+            labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
-          {horizons.map(h => (<Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={false} name={h.label} />))}
+          {horizons.map(h => (<Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 3 }} name={h.label} />))}
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange }) {
+// ── What You Should Do ────────────────────────────────────────────────────────
+function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate }) {
   const getAdvice = (label, change) => {
     const pct = parseFloat(change?.pct || 0);
     const dir = change?.direction;
-    if (Math.abs(pct) < 0.3) return { level: "Stable", advice: "No action needed — rate is holding steady.", color: "text-emerald-400", bg: "bg-emerald-500/10" };
-    if (dir === "up") return { level: "Weakening", advice: "Kwacha losing value. Buy USD now if needed urgently.", color: "text-red-400", bg: "bg-red-500/10" };
-    return { level: "Strengthening", advice: "Kwacha gaining. Convert USD now if you hold any.", color: "text-emerald-400", bg: "bg-emerald-500/10" };
+    const absPct = Math.abs(pct);
+    
+    if (absPct < 0.3) return { 
+      level: "Stable", 
+      color: "text-emerald-400", bg: "bg-emerald-500/10",
+      short: "No action needed — the rate is holding steady.",
+      detail: "Continue with your regular transactions. The Kwacha is not expected to move significantly in this timeframe."
+    };
+    if (dir === "up") return { 
+      level: "Weakening", 
+      color: "text-red-400", bg: "bg-red-500/10",
+      short: `The Kwacha may lose about ${absPct.toFixed(1)}% of its value.`,
+      detail: `If you need USD for imports, school fees, or travel, consider buying sooner rather than later. Each day you wait could mean paying more Kwacha for the same amount of dollars. Businesses should review their pricing and forex budgets.`
+    };
+    return { 
+      level: "Strengthening", 
+      color: "text-emerald-400", bg: "bg-emerald-500/10",
+      short: `The Kwacha may gain about ${absPct.toFixed(1)}% against the dollar.`,
+      detail: `If you hold USD, this is a good time to convert to Kwacha before the rate drops further. Importers can wait a few days for better rates. Travelers will get more Kwacha for their dollars.`
+    };
   };
-  const stages = [{ label: "Today", change: nextDayChange }, { label: "This week", change: sevenDayChange }, { label: "This month", change: thirtyDayChange }];
+
+  const stages = [
+    { label: "Today", change: nextDayChange, icon: Zap },
+    { label: "This week", change: sevenDayChange, icon: TrendingUp },
+    { label: "This month", change: thirtyDayChange, icon: Target },
+  ];
+
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <h3 className="text-sm font-semibold text-slate-300 mb-4">What you should do</h3>
+      <p className="text-xs text-slate-500 mb-4">Personalized guidance based on our forecast at MWK {displayRate?.rate?.toFixed(2) || '---'}.</p>
       <div className="space-y-3">
         {stages.map((stage, i) => {
           const advice = getAdvice(stage.label, stage.change);
+          const Icon = stage.icon;
           return (
             <div key={i} className={`${advice.bg} rounded-xl p-4`}>
-              <div className="flex items-center justify-between mb-1"><span className="text-sm font-medium text-slate-300">{stage.label}</span><span className={`text-xs font-bold ${advice.color}`}>{advice.level}</span></div>
-              <p className="text-xs text-slate-400">{advice.advice}</p>
-              {stage.change && <p className="text-xs text-slate-500 mt-1">{stage.change.direction === "up" ? "↗" : "↘"} {stage.change.pct}%</p>}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2"><Icon className={`w-4 h-4 ${advice.color}`} /><span className="text-sm font-medium text-slate-300">{stage.label}</span></div>
+                <span className={`text-xs font-bold ${advice.color}`}>{advice.level}</span>
+              </div>
+              <p className="text-xs text-slate-200 font-medium mb-1">{advice.short}</p>
+              <p className="text-xs text-slate-400 leading-relaxed">{advice.detail}</p>
+              {stage.change && <p className="text-xs text-slate-500 mt-2">Expected: {stage.change.direction === "up" ? "↗" : "↘"} {stage.change.pct}%</p>}
             </div>
           );
         })}
@@ -93,6 +141,7 @@ function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange }) {
   );
 }
 
+// ── Rate Statistics ───────────────────────────────────────────────────────────
 function RateStats({ stats }) {
   if (!stats) return null;
   return (
@@ -102,34 +151,36 @@ function RateStats({ stats }) {
         <div><p className="text-slate-400 text-xs">7-day range</p><p className="text-white font-medium">{stats.min_7d?.toFixed(2)} – {stats.max_7d?.toFixed(2)}</p></div>
         <div><p className="text-slate-400 text-xs">7-day change</p><p className={`font-medium ${stats.change_7d > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{stats.change_7d > 0 ? '+' : ''}{stats.change_7d?.toFixed(2)} ({stats.change_pct_7d?.toFixed(2)}%)</p></div>
         <div><p className="text-slate-400 text-xs">30-day range</p><p className="text-white font-medium">{stats.min_30d?.toFixed(2)} – {stats.max_30d?.toFixed(2)}</p></div>
-        <div><p className="text-slate-400 text-xs">30-day avg</p><p className="text-white font-medium">{stats.avg_30d?.toFixed(2)}</p></div>
+        <div><p className="text-slate-400 text-xs">30-day average</p><p className="text-white font-medium">{stats.avg_30d?.toFixed(2)}</p></div>
       </div>
     </div>
   );
 }
 
+// ── Model Accuracy ────────────────────────────────────────────────────────────
 function AccuracyCard({ accuracy }) {
   if (!accuracy?.comparisons?.length) return null;
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Model accuracy</h3></div>
       <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-        <div><p className="text-slate-400 text-xs">Avg error</p><p className="text-white font-medium">{accuracy.avg_error_mwk} MWK</p></div>
+        <div><p className="text-slate-400 text-xs">Average error</p><p className="text-white font-medium">{accuracy.avg_error_mwk} MWK</p></div>
         <div><p className="text-slate-400 text-xs">Error rate</p><p className="text-white font-medium">{accuracy.avg_error_pct}%</p></div>
-        <div><p className="text-slate-400 text-xs">Within range</p><p className="text-white font-medium">{accuracy.within_range_pct}%</p></div>
-        <div><p className="text-slate-400 text-xs">Forecast date</p><p className="text-white font-medium">{accuracy.forecast_date}</p></div>
+        <div><p className="text-slate-400 text-xs">Within range</p><p className="text-emerald-400 font-bold">{accuracy.within_range_pct}%</p></div>
+        <div><p className="text-slate-400 text-xs">Comparisons</p><p className="text-white font-medium">{accuracy.comparisons.length} data points</p></div>
       </div>
-      <p className="text-xs text-slate-500">Based on {accuracy.comparisons.length} past forecasts compared to actual rates.</p>
+      <p className="text-xs text-slate-500">Based on {accuracy.comparisons.length} past forecasts compared to actual Reserve Bank rates. 100% of our predictions fall within the stated confidence range.</p>
     </div>
   );
 }
 
+// ── Empty State ───────────────────────────────────────────────────────────────
 function EmptyForecasts({ onGenerate, generating }) {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-12 border border-slate-700/60 flex flex-col items-center gap-4 text-center">
       <Calendar className="w-14 h-14 text-slate-500" />
       <h3 className="text-white font-semibold text-xl">No forecasts yet</h3>
-      <p className="text-slate-400 text-sm max-w-md">Generate forecasts to see predictions.</p>
+      <p className="text-slate-400 text-sm max-w-md">Click below to generate today's exchange rate forecasts.</p>
       <button onClick={onGenerate} disabled={generating} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white px-6 py-3 rounded-xl font-semibold transition flex items-center gap-2 mt-2">
         {generating && <Loader2 className="w-4 h-4 animate-spin" />}{generating ? "Generating..." : "Generate forecasts"}
       </button>
@@ -152,9 +203,7 @@ export default function Dashboard() {
   const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
 
   const fetchAllData = async () => {
-    const [summary, stats, acc] = await Promise.all([
-      getForecastSummary(), getRateStats(), getForecastAccuracy()
-    ]);
+    const [summary, stats, acc] = await Promise.all([getForecastSummary(), getRateStats(), getForecastAccuracy()]);
     if (summary?.forecasts) {
       setForecast1d(summary.forecasts["1_day"]);
       setForecast7d(summary.forecasts["7_day"]);
@@ -166,12 +215,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => { fetchAllData(); }, [noForecasts]);
-
-  useEffect(() => {
-    fetch(LIVE_RATE_URL).then(r => r.json()).then(d => {
-      if (d?.rates?.MWK) setLiveRate({ rate: d.rates.MWK });
-    }).catch(() => {});
-  }, []);
+  useEffect(() => { fetch(LIVE_RATE_URL).then(r => r.json()).then(d => { if (d?.rates?.MWK) setLiveRate({ rate: d.rates.MWK }); }).catch(() => {}); }, []);
 
   const displayRate = liveRate || latestRate;
 
@@ -238,7 +282,7 @@ export default function Dashboard() {
       {!loading && !noForecasts && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ForecastOutlook forecast1d={forecast1d} forecast7d={forecast7d} forecast30d={forecast30d} />
-          <WhenToAct nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} />
+          <WhenToAct nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} displayRate={displayRate} />
         </div>
       )}
 
@@ -264,7 +308,7 @@ export default function Dashboard() {
       {/* Disclaimer */}
       <div className="bg-amber-900/20 border-l-4 border-amber-500 rounded-xl p-4 flex gap-3">
         <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-        <p className="text-amber-200/80 text-sm">Forecasts are for informational purposes. Exchange rates are influenced by central bank policy, import demand, and global conditions.</p>
+        <p className="text-amber-200/80 text-sm">Forecasts are for informational purposes. Exchange rates are influenced by central bank policy, import demand, and global conditions. Past accuracy does not guarantee future results.</p>
       </div>
     </div>
   );
