@@ -1,22 +1,24 @@
 ﻿import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Home, LayoutDashboard, History, BookOpen, Menu, X } from "lucide-react";
+import { useLanguage } from "../context/LanguageContext";
 
 export default function Navbar() {
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
+  const { lang, setLang, t } = useLanguage();
 
   const links = [
-    { to: "/", label: "Home", icon: Home },
-    { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { to: "/history", label: "History", icon: History },
-    { to: "/about", label: "About", icon: BookOpen },
+    { to: "/", label: t('home'), icon: Home },
+    { to: "/dashboard", label: t('dashboard'), icon: LayoutDashboard },
+    { to: "/history", label: t('history'), icon: History },
+    { to: "/about", label: t('about'), icon: BookOpen },
   ];
 
   return (
     <nav className="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
-        {/* BRAND - no v1.0 badge */}
+        {/* BRAND */}
         <Link to="/" className="flex items-center gap-2">
           <span className="text-xl font-bold text-white tracking-tight">
             Kwacha<span className="text-emerald-400">Cast</span>
@@ -43,6 +45,14 @@ export default function Navbar() {
               </Link>
             );
           })}
+          {/* LANGUAGE TOGGLE */}
+          <button 
+            onClick={() => setLang(lang === 'en' ? 'ny' : 'en')} 
+            className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition ml-2"
+            title={lang === 'en' ? 'Switch to Chichewa' : 'Switch to English'}
+          >
+            {lang === 'en' ? 'CHI' : 'ENG'}
+          </button>
         </div>
 
         {/* MOBILE BUTTON */}
@@ -71,6 +81,13 @@ export default function Navbar() {
               </Link>
             );
           })}
+          {/* MOBILE LANGUAGE TOGGLE */}
+          <button 
+            onClick={() => { setLang(lang === 'en' ? 'ny' : 'en'); setOpen(false); }} 
+            className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition w-fit"
+          >
+            {lang === 'en' ? 'Chichewa' : 'English'}
+          </button>
         </div>
       )}
     </nav>
