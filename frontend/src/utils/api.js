@@ -148,3 +148,13 @@ export const getForecasts = {
 export const getAnomalies = async () => [];
 export const getRates = getLatestRate;
 export const fetchHistoryData = fetchHistory;
+// -- Advanced Endpoints ------------------------------------------------------
+export const getRateStats = async () => { try { const res = await api.get('/rates/stats'); return res.data; } catch { return null; } };
+export const getRateAlerts = async () => { try { const res = await api.get('/rates/alerts'); return res.data; } catch { return null; } };
+export const getForecastAccuracy = async () => { try { const res = await api.get('/forecasts/accuracy'); return res.data; } catch { return null; } };
+export const getQuickForecast = async () => { try { const res = await api.get('/forecasts/quick'); return res.data; } catch { return null; } };
+export const getModelsHealth = async () => { try { const res = await api.get('/models/health'); return res.data; } catch { return null; } };
+export const exportForecasts = (horizon = 7) => { window.open('/forecasts/export?horizon=' + horizon + '&format=csv', '_blank'); };
+export const exportRates = () => { window.open('/rates/export?format=csv', '_blank'); };
+
+export const getPipeline = async () => { try { const res = await api.get('/pipeline/status'); return res.data || { status: 'unknown' }; } catch { return { status: 'unknown' }; } };

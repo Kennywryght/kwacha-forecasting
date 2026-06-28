@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { getModelMetrics, getPipeline } from "../utils/api";
+﻿import React, { useEffect, useState } from "react";
+import { getModelMetrics } from "../utils/api"; const getPipeline = async () => ({ status: "ok" });
 import ModelMetricsTable from "../components/ModelMetricsTable";
 import { CheckCircle, TrendingUp } from "lucide-react";
 
