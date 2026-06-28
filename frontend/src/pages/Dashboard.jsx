@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
 import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts } from "../utils/api";
@@ -76,7 +76,11 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
             formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]} 
             labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
-          {horizons.map(h => (<Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 3 }} name={h.label} />))}
+          {[
+  { label: "Next day", color: "#34d399" },
+  { label: "7 days", color: "#60a5fa" },
+  { label: "30 days", color: "#fbbf24" },
+].map(h => (<Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 2 }} name={h.label} />))}
         </LineChart>
       </ResponsiveContainer>
     </div>
