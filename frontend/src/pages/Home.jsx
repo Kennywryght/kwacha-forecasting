@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { TrendingUp, BarChart3, Zap, Shield, ArrowRight, RefreshCw } from 'lucide-react'
+import { TrendingUp, BarChart3, Zap, Shield, ArrowRight, RefreshCw, Download, Smartphone } from 'lucide-react'
+import { useLanguage } from '../context/LanguageContext'
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD'
 
@@ -8,6 +9,33 @@ export default function Home() {
   const [liveRate, setLiveRate] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [deferredPrompt, setDeferredPrompt] = useState(null)
+  const [isInstallable, setIsInstallable] = useState(false)
+  const { t } = useLanguage()
+
+  // Listen for PWA install prompt
+  useEffect(() => {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault()
+      setDeferredPrompt(e)
+      setIsInstallable(true)
+    })
+    
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstallable(false)
+    }
+  }, [])
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return
+    deferredPrompt.prompt()
+    const { outcome } = await deferredPrompt.userChoice
+    if (outcome === 'accepted') {
+      setIsInstallable(false)
+    }
+    setDeferredPrompt(null)
+  }
 
   const fetchLiveRate = async () => {
     setLoading(true)
@@ -39,10 +67,10 @@ export default function Home() {
   useEffect(() => { fetchLiveRate() }, [])
 
   const features = [
-    { icon: TrendingUp, title: 'Daily forecasts', description: 'Next day, 7-day, and 30-day exchange rate predictions updated every business day.' },
-    { icon: BarChart3, title: 'Historical data', description: 'Interactive charts showing MWK/USD rates from 2013 to present.' },
-    { icon: Zap, title: 'Live rate', description: 'Real-time exchange rate so you always know the current value of the Kwacha.' },
-    { icon: Shield, title: 'Proven accuracy', description: 'Our system achieves 0.30% average error — that is within 5 MWK of the actual rate.' },
+    { icon: TrendingUp, title: t('dailyForecasts', { default: 'Daily forecasts' }), description: t('dailyForecastsDesc', { default: 'Next day, 7-day, and 30-day exchange rate predictions updated every business day.' }) },
+    { icon: BarChart3, title: t('historicalData', { default: 'Historical data' }), description: t('historicalDataDesc', { default: 'Interactive charts showing MWK/USD rates from 2013 to present.' }) },
+    { icon: Zap, title: t('liveRate', { default: 'Live rate' }), description: t('liveRateDesc', { default: 'Real-time exchange rate so you always know the current value of the Kwacha.' }) },
+    { icon: Shield, title: t('provenAccuracy', { default: 'Proven accuracy' }), description: t('provenAccuracyDesc', { default: 'Our system achieves 0.30% average error — that is within 5 MWK of the actual rate.' }) },
   ]
 
   return (
@@ -65,18 +93,24 @@ export default function Home() {
               </p>
               <div className="flex flex-wrap gap-4">
                 <Link to="/dashboard" className="bg-emerald-600 hover:bg-emerald-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
-                  Open dashboard <ArrowRight className="w-4 h-4" />
+                  {t('openDashboard', { default: 'Open dashboard' })} <ArrowRight className="w-4 h-4" />
                 </Link>
                 <Link to="/about" className="border border-slate-600 hover:border-slate-400 transition px-6 py-3 rounded-xl font-semibold">
-                  Learn more
+                  {t('learnMore', { default: 'Learn more' })}
                 </Link>
+                {/* PWA Install Button */}
+                {isInstallable && (
+                  <button onClick={handleInstall} className="bg-purple-600 hover:bg-purple-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
+                    <Download className="w-4 h-4" /> {t('installApp', { default: 'Install App' })}
+                  </button>
+                )}
               </div>
             </div>
 
             {/* LIVE RATE CARD */}
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-slate-400 text-sm uppercase tracking-wider">Live exchange rate</p>
+                <p className="text-slate-400 text-sm uppercase tracking-wider">{t('liveExchangeRate', { default: 'Live exchange rate' })}</p>
                 <button onClick={fetchLiveRate} className="text-slate-500 hover:text-white transition" title="Refresh">
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
@@ -96,11 +130,11 @@ export default function Home() {
                   </h2>
                   <p className="text-lg text-slate-300 mb-4">MWK per USD</p>
                   <div className="space-y-2 text-sm text-slate-400">
-                    <p>Source: <span className="text-slate-300">{liveRate?.source || '—'}</span></p>
-                    <p>Updated: <span className="text-slate-300">{liveRate?.date || '—'}</span></p>
+                    <p>{t('source', { default: 'Source' })}: <span className="text-slate-300">{liveRate?.source || '—'}</span></p>
+                    <p>{t('updated', { default: 'Updated' })}: <span className="text-slate-300">{liveRate?.date || '—'}</span></p>
                   </div>
                   <p className="text-xs text-slate-500 mt-4">
-                    Rate sourced from open.er-api.com. For reference only.
+                    {t('rateDisclaimer', { default: 'Rate sourced from open.er-api.com. For reference only.' })}
                   </p>
                 </>
               )}
@@ -113,9 +147,9 @@ export default function Home() {
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">What you can do</h2>
+            <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">{t('whatYouCanDo', { default: 'What you can do' })}</h2>
             <p className="text-slate-400 max-w-2xl mx-auto">
-              Simple tools to help you make better decisions about the Kwacha.
+              {t('simpleTools', { default: 'Simple tools to help you make better decisions about the Kwacha.' })}
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -137,16 +171,16 @@ export default function Home() {
       <section className="bg-slate-900 border-y border-slate-800 py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-white mb-4">Why trust KwachaCast?</h2>
+            <h2 className="text-3xl font-bold text-white mb-4">{t('whyTrust', { default: 'Why trust KwachaCast?' })}</h2>
             <p className="text-slate-400 max-w-2xl mx-auto">
-              Built with real data and proven methods to give you reliable forecasts.
+              {t('builtWithRealData', { default: 'Built with real data and proven methods to give you reliable forecasts.' })}
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-8 text-center">
             {[
-              { value: '0.30%', label: 'Average error rate' },
-              { value: '13+', label: 'Years of data' },
-              { value: 'Daily', label: 'Forecast updates' },
+              { value: '0.30%', label: t('avgErrorRate', { default: 'Average error rate' }) },
+              { value: '13+', label: t('yearsOfData', { default: 'Years of data' }) },
+              { value: t('daily', { default: 'Daily' }), label: t('forecastUpdates', { default: 'Forecast updates' }) },
             ].map((stat, i) => (
               <div key={i}>
                 <p className="text-4xl font-bold text-emerald-400">{stat.value}</p>
@@ -154,18 +188,41 @@ export default function Home() {
               </div>
             ))}
           </div>
+          
+          {/* Mobile App Download Section */}
+          <div className="mt-12 bg-slate-800/60 rounded-2xl p-8 border border-slate-700/60 text-center">
+            <Smartphone className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+            <h3 className="text-2xl font-bold text-white mb-2">{t('getTheApp', { default: 'Get the App' })}</h3>
+            <p className="text-slate-400 mb-6 max-w-lg mx-auto">
+              {t('installOnPhone', { default: 'Install KwachaCast on your phone for quick access. No app store needed — just tap the button below.' })}
+            </p>
+            {isInstallable ? (
+              <button onClick={handleInstall} className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition inline-flex items-center gap-2">
+                <Download className="w-5 h-5" /> {t('installNow', { default: 'Install KwachaCast' })}
+              </button>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-slate-400 text-sm">
+                  {t('howToInstall', { default: 'To install: open this site in Chrome, tap the menu (⋮), and select "Add to Home Screen".' })}
+                </p>
+                <p className="text-slate-500 text-xs">
+                  {t('noAppStore', { default: 'No app store required. The app works offline and updates automatically.' })}
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </section>
 
       {/* CTA */}
       <section className="py-20">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">Ready to see the forecasts?</h2>
+          <h2 className="text-3xl font-bold text-white mb-4">{t('readyToSee', { default: 'Ready to see the forecasts?' })}</h2>
           <p className="text-slate-400 mb-8">
-            View daily, weekly, and monthly predictions for the Malawi Kwacha.
+            {t('viewPredictions', { default: 'View daily, weekly, and monthly predictions for the Malawi Kwacha.' })}
           </p>
           <Link to="/dashboard" className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-semibold text-lg transition inline-flex items-center gap-2">
-            Open dashboard <ArrowRight className="w-5 h-5" />
+            {t('openDashboard', { default: 'Open dashboard' })} <ArrowRight className="w-5 h-5" />
           </Link>
         </div>
       </section>
