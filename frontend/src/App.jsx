@@ -1,8 +1,8 @@
-import React from "react";
+﻿import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import Navbar from "./components/Navbar";
-import Dashboard from "./pages/Dashboard";
+import Dashboard from "./pages/Dashboard"  // SimpleDashboard;
 import History from "./pages/History";
 import Models from "./pages/Models";
 import Home from "./pages/Home";

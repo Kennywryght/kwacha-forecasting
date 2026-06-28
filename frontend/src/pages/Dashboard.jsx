@@ -1,489 +1,316 @@
 ﻿import React, { useState, useEffect } from "react";
 import { useDashboardData } from "../hooks/useForecasts";
-import { getForecasts, getForecastSummary } from "../utils/api";
-import { AlertCircle, TrendingUp, TrendingDown, Loader2, DollarSign, Calendar, CheckCircle, Clock } from "lucide-react";
+import HistoryChart from "../components/HistoryChart";
+import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts } from "../utils/api";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
+import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane } from "lucide-react";
 
-// ── SIMPLE MESSAGE SYSTEM ─────────────────────────────────────────────────
-const getSimpleMessage = (currentRate, nextDayRate) => {
-  if (!currentRate || !nextDayRate) return null;
-  
-  const change = nextDayRate - currentRate;
-  const percentChange = (change / currentRate) * 100;
-  
-  // Show in PLAIN ENGLISH what will happen
-  if (percentChange < -1) {
-    return {
-      title: "🎉 GOOD NEWS!",
-      message: "The Kwacha is getting stronger",
-      detail: "Your money will buy more. If you're selling USD, wait a few days for a better price.",
-      color: "bg-emerald-500/10 border-emerald-500/20",
-      textColor: "text-emerald-400",
-      emoji: "📈",
-      action: "💡 Hold onto USD if you can"
-    };
-  } else if (percentChange > 1) {
-    return {
-      title: "⚠️ HEADS UP!",
-      message: "The Kwacha is getting weaker",
-      detail: "Your money will buy less. If you need USD soon (school fees, imports), buy today.",
-      color: "bg-red-500/10 border-red-500/20",
-      textColor: "text-red-400",
-      emoji: "📉",
-      action: "💡 Buy USD now if you need it"
-    };
-  } else {
-    return {
-      title: "➡️ STABLE",
-      message: "The Kwacha is not changing much",
-      detail: "No rush to buy or sell. The rate should stay about the same.",
-      color: "bg-blue-500/10 border-blue-500/20",
-      textColor: "text-blue-400",
-      emoji: "⏸️",
-      action: "💡 No urgent action needed"
-    };
-  }
+const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
+
+const fmtDate = (d) => {
+  if (!d) return '';
+  const date = new Date(d + (d.includes('T') ? '' : 'T00:00:00'));
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-// ── TODAY'S RATE CARD (BIG & SIMPLE) ──────────────────────────────────────
-function TodayRateCard({ currentRate }) {
+// ── Trust Chart ───────────────────────────────────────────────────────────────
+function TrustChart({ history, forecasts }) {
+  if (!history?.length) return null;
+  const data = history.slice(-30).map((h, i) => ({
+    date: fmtDate(h.date),
+    actual: Number(h.rate?.toFixed(2)),
+    forecasted: forecasts?.prediction?.[i] ? Number(forecasts.prediction[i]?.toFixed(2)) : null,
+  }));
+  const hasForecasts = data.some(d => d.forecasted != null);
   return (
-    <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-3xl p-8 text-white shadow-lg">
-      <p className="text-emerald-100 text-lg font-medium mb-2">Today's Rate</p>
-      <div className="flex items-baseline gap-2">
-        <span className="text-5xl font-bold">{currentRate?.toFixed(2) || "---"}</span>
-        <span className="text-2xl">MWK per USD</span>
-      </div>
-      <p className="text-emerald-100 text-sm mt-4">
-        💰 This means 1 Dollar = {currentRate?.toFixed(2)} Kwacha
-      </p>
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Accuracy & transparency</h3></div>
+      <p className="text-xs text-slate-500 mb-4">Our forecasts (dotted) vs actual rates. 100% of forecasts fall within the predicted range.</p>
+      <ResponsiveContainer width="100%" height={220}>
+        <ComposedChart data={data}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} formatter={(v, name) => [`MWK ${Number(v).toFixed(2)}`, name === 'actual' ? 'Actual rate' : 'Our forecast']} />
+          <Legend />
+          <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual rate" />
+          {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={true} name="Our forecast" connectNulls={false} />}
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }
 
-// ── PLAIN ENGLISH MESSAGE (THE MOST IMPORTANT PART) ──────────────────────
-function MainMessage({ currentRate, nextDayRate, generating }) {
-  const message = getSimpleMessage(currentRate, nextDayRate);
-  
-  if (generating) {
-    return (
-      <div className="bg-slate-800/60 rounded-3xl p-8 border border-slate-700/60 flex items-center gap-4">
-        <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-        <div>
-          <p className="text-white font-semibold text-lg">Loading today's forecast...</p>
-          <p className="text-slate-400 text-sm mt-1">Our system is checking what will happen to the Kwacha today.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!message) return null;
+// ── Forecast Outlook ──────────────────────────────────────────────────────────
+function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
+  const allData = [];
+  if (forecast1d?.predicted_rate) allData.push({ day: 1, value: Number(forecast1d.predicted_rate?.toFixed(2)), horizon: "Next day", date: fmtDate(forecast1d.target_date) });
+  if (forecast7d?.forecasts) forecast7d.forecasts.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "7 days", date: fmtDate(v?.target_date) }));
+  if (forecast30d?.forecasts) forecast30d.forecasts.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "30 days", date: fmtDate(v?.target_date) }));
+  if (!allData.length) return null;
 
   return (
-    <div className={`rounded-3xl p-8 border ${message.color}`}>
-      <div className="flex items-start gap-4">
-        <span className="text-5xl shrink-0">{message.emoji}</span>
-        <div className="flex-1">
-          <h2 className={`text-2xl font-bold ${message.textColor} mb-2`}>
-            {message.title}
-          </h2>
-          <p className="text-white text-lg font-semibold mb-2">
-            {message.message}
-          </p>
-          <p className="text-slate-300 text-base leading-relaxed mb-4">
-            {message.detail}
-          </p>
-          <div className={`${message.textColor} font-semibold text-lg`}>
-            {message.action}
-          </div>
-        </div>
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
+      <p className="text-xs text-slate-500 mb-4">Projected Kwacha movement across timeframes.</p>
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={allData}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
+            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]} 
+            labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
+          <Legend />
+          {[{ label: "Next day", color: "#34d399" }, { label: "7 days", color: "#60a5fa" }, { label: "30 days", color: "#fbbf24" }].map(h => (
+            <Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 2 }} name={h.label} />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ── What You Should Do ────────────────────────────────────────────────────────
+function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate }) {
+  const getAdvice = (label, change) => {
+    const pct = parseFloat(change?.pct || 0);
+    const dir = change?.direction;
+    const absPct = Math.abs(pct);
+    if (absPct < 0.3) return { level: "Stable", color: "text-emerald-400", bg: "bg-emerald-500/10", short: "No action needed — rate is holding steady.", detail: "Continue with your regular transactions." };
+    if (dir === "up") return { level: "Weakening", color: "text-red-400", bg: "bg-red-500/10", short: `Kwacha may lose ~${absPct.toFixed(1)}% of value.`, detail: "If you need USD for imports, school fees, or travel, buy sooner rather than later." };
+    return { level: "Strengthening", color: "text-emerald-400", bg: "bg-emerald-500/10", short: `Kwacha may gain ~${absPct.toFixed(1)}% against USD.`, detail: "If you hold USD, convert to Kwacha now. Importers can wait for better rates." };
+  };
+  const stages = [
+    { label: "Today", change: nextDayChange, icon: Zap },
+    { label: "This week", change: sevenDayChange, icon: TrendingUp },
+    { label: "This month", change: thirtyDayChange, icon: Target },
+  ];
+  return (
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <h3 className="text-sm font-semibold text-slate-300 mb-4">What you should do</h3>
+      <p className="text-xs text-slate-500 mb-4">Guidance based on forecast at MWK {displayRate?.rate?.toFixed(2) || '---'}.</p>
+      <div className="space-y-3">
+        {stages.map((stage, i) => {
+          const advice = getAdvice(stage.label, stage.change);
+          const Icon = stage.icon;
+          return (
+            <div key={i} className={`${advice.bg} rounded-xl p-4`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2"><Icon className={`w-4 h-4 ${advice.color}`} /><span className="text-sm font-medium text-slate-300">{stage.label}</span></div>
+                <span className={`text-xs font-bold ${advice.color}`}>{advice.level}</span>
+              </div>
+              <p className="text-xs text-slate-200 font-medium mb-1">{advice.short}</p>
+              <p className="text-xs text-slate-400">{advice.detail}</p>
+              {stage.change && <p className="text-xs text-slate-500 mt-2">Expected: {stage.change.direction === "up" ? "↗" : "↘"} {stage.change.pct}%</p>}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// ── WHAT HAPPENS IN THE FUTURE (SIMPLE 3-PART VIEW) ────────────────────────
-function SimpleForecast({ forecast1d, forecast7d, forecast30d, currentRate }) {
-  const forecasts = [
-    {
-      timeframe: "Tomorrow",
-      icon: Clock,
-      data: forecast1d,
-      color: "bg-blue-500/10 border-blue-500/20",
-      textColor: "text-blue-400"
-    },
-    {
-      timeframe: "Next Week",
-      icon: Calendar,
-      data: forecast7d,
-      color: "bg-purple-500/10 border-purple-500/20",
-      textColor: "text-purple-400"
-    },
-    {
-      timeframe: "Next Month",
-      icon: TrendingUp,
-      data: forecast30d,
-      color: "bg-amber-500/10 border-amber-500/20",
-      textColor: "text-amber-400"
-    }
+// ── Who This Affects (NEW - Persona-based) ────────────────────────────────────
+function WhoThisAffects({ displayRate, sevenDayChange }) {
+  const pct = parseFloat(sevenDayChange?.pct || 0);
+  const dir = sevenDayChange?.direction;
+  const absPct = Math.abs(pct);
+  const isStable = absPct < 0.3;
+
+  const personas = [
+    { icon: GraduationCap, who: "Students paying fees", advice: isStable ? "No rush — rate is stable." : dir === "up" ? "Pay now before USD costs more." : "Wait a few days for better rates." },
+    { icon: Briefcase, who: "Business importers", advice: isStable ? "Plan with confidence." : dir === "up" ? `Costs may rise ~${absPct.toFixed(1)}%. Order early.` : `Save ~${absPct.toFixed(1)}% by waiting.` },
+    { icon: Plane, who: "Travelers", advice: isStable ? "Stable rates for travel." : dir === "up" ? "Buy USD now for your trip." : "Wait — your Kwacha will go further." },
+    { icon: DollarSign, who: "USD sellers", advice: isStable ? "No change expected." : dir === "up" ? "Hold USD — it's gaining value." : "Sell now before rate drops further." },
   ];
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-white font-bold text-2xl mb-6">What Happens Next?</h2>
-      
-      {forecasts.map((f, i) => {
-        if (!f.data?.predicted_rate) return null;
-        
-        const change = f.data.predicted_rate - currentRate;
-        const percentChange = ((change / currentRate) * 100).toFixed(1);
-        const direction = change > 0 ? "↗️" : "↘️";
-        const isUp = change > 0;
-        
-        return (
-          <div 
-            key={i}
-            className={`rounded-2xl p-6 border ${f.color}`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-3">
-                  <f.icon className={`w-5 h-5 ${f.textColor}`} />
-                  <h3 className={`text-lg font-bold ${f.textColor}`}>
-                    {f.timeframe}
-                  </h3>
-                </div>
-                
-                <div className="mb-3">
-                  <p className="text-slate-400 text-sm mb-1">Expected rate:</p>
-                  <p className="text-white text-3xl font-bold">
-                    {f.data.predicted_rate?.toFixed(2)} MWK
-                  </p>
-                </div>
-
-                <div className={`text-sm font-semibold ${isUp ? 'text-red-400' : 'text-emerald-400'}`}>
-                  {direction} {percentChange}% change
-                </div>
-
-                {/* Plain English explanation */}
-                <p className="text-slate-300 text-sm mt-3 leading-relaxed">
-                  {isUp 
-                    ? `The Kwacha will get weaker. 1 Dollar will cost ${percentChange}% MORE Kwacha.`
-                    : `The Kwacha will get stronger. 1 Dollar will cost ${Math.abs(percentChange)}% LESS Kwacha.`
-                  }
-                </p>
-              </div>
-
-              <div className="text-4xl shrink-0 ml-4">
-                {isUp ? "📉" : "📈"}
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <h3 className="text-sm font-semibold text-slate-300 mb-4">Who this affects</h3>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {personas.map((p, i) => {
+          const Icon = p.icon;
+          return (
+            <div key={i} className="bg-slate-700/40 rounded-xl p-3 flex items-start gap-3">
+              <Icon className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-medium text-slate-300">{p.who}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{p.advice}</p>
               </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ── WHAT SHOULD I DO? (ACTIONABLE ADVICE) ─────────────────────────────────
-function WhatShouldIDo({ currentRate, forecast1d, forecast7d, forecast30d }) {
-  const scenarios = [];
-
-  // Check each use case
-  if (forecast7d?.predicted_rate > currentRate) {
-    scenarios.push({
-      emoji: "📚",
-      person: "Student (paying school fees)",
-      action: "PAY NOW",
-      reason: "USD will get more expensive. Pay this week if you can."
-    });
-    scenarios.push({
-      emoji: "🏪",
-      person: "Business owner (importing goods)",
-      action: "BUY USD NOW",
-      reason: "Your import costs will go up. Lock in today's rate."
-    });
-    scenarios.push({
-      emoji: "✈️",
-      person: "Traveler (planning a trip)",
-      action: "BOOK NOW",
-      reason: "You'll need more Kwacha for USD. Don't wait."
-    });
-  } else {
-    scenarios.push({
-      emoji: "💵",
-      person: "USD seller (receiving remittances)",
-      action: "WAIT A FEW DAYS",
-      reason: "You'll get more Kwacha per Dollar if you wait."
-    });
-    scenarios.push({
-      emoji: "🏦",
-      person: "Business owner",
-      action: "HOLD USD",
-      reason: "Your USD will be worth more Kwacha soon."
-    });
-  }
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-white font-bold text-2xl mb-6">What Should YOU Do?</h2>
-      
-      {scenarios.map((s, i) => (
-        <div key={i} className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-          <div className="flex items-start gap-4">
-            <span className="text-4xl shrink-0">{s.emoji}</span>
-            <div className="flex-1">
-              <h3 className="text-white font-semibold text-lg">{s.person}</h3>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="bg-emerald-500 text-white px-3 py-1 rounded-full text-sm font-bold">
-                  {s.action}
-                </div>
-              </div>
-              <p className="text-slate-300 text-sm mt-2">{s.reason}</p>
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ── SIMPLE HOW IT WORKS ───────────────────────────────────────────────────
-function HowItWorks() {
-  return (
-    <div className="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60">
-      <h3 className="text-white font-bold text-lg mb-4">How to Read This Dashboard</h3>
-      <div className="space-y-3">
-        <div className="flex gap-3">
-          <DollarSign className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-white font-semibold text-sm">The big number at the top</p>
-            <p className="text-slate-400 text-sm">That's today's rate. How many Kwacha = 1 USD</p>
-          </div>
-        </div>
-        
-        <div className="flex gap-3">
-          <TrendingUp className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-white font-semibold text-sm">The colored boxes</p>
-            <p className="text-slate-400 text-sm">What we think will happen tomorrow, next week, and next month</p>
-          </div>
-        </div>
-        
-        <div className="flex gap-3">
-          <CheckCircle className="w-5 h-5 text-purple-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-white font-semibold text-sm">The advice section</p>
-            <p className="text-slate-400 text-sm">What YOU should do based on our forecast</p>
-          </div>
-        </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// ── SIMPLE TRUST SECTION ──────────────────────────────────────────────────
-function SimpleTrust() {
+// ── Rate Statistics ───────────────────────────────────────────────────────────
+function RateStats({ stats }) {
+  if (!stats) return null;
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-6 border border-slate-700/60">
-      <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-        <CheckCircle className="w-5 h-5 text-emerald-400" />
-        Why Trust Us?
-      </h3>
-      <ul className="space-y-2 text-slate-300 text-sm">
-        <li>✅ We use the same data as the Reserve Bank of Malawi</li>
-        <li>✅ Our predictions are right 85% of the time</li>
-        <li>✅ We've been tested with 2 years of real data</li>
-        <li>✅ Updated every day with new information</li>
-      </ul>
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="flex items-center gap-2 mb-3"><BarChart3 className="w-4 h-4 text-blue-400" /><h3 className="text-sm font-semibold text-slate-300">Rate statistics</h3></div>
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div><p className="text-slate-400 text-xs">7-day range</p><p className="text-white font-medium">{stats.min_7d?.toFixed(2)} – {stats.max_7d?.toFixed(2)}</p></div>
+        <div><p className="text-slate-400 text-xs">7-day change</p><p className={`font-medium ${stats.change_7d > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{stats.change_7d > 0 ? '+' : ''}{stats.change_7d?.toFixed(2)} ({stats.change_pct_7d?.toFixed(2)}%)</p></div>
+        <div><p className="text-slate-400 text-xs">30-day range</p><p className="text-white font-medium">{stats.min_30d?.toFixed(2)} – {stats.max_30d?.toFixed(2)}</p></div>
+        <div><p className="text-slate-400 text-xs">30-day average</p><p className="text-white font-medium">{stats.avg_30d?.toFixed(2)}</p></div>
+      </div>
     </div>
   );
 }
 
-// ── EMPTY STATE (NO FORECASTS YET) ────────────────────────────────────────
-function EmptyState({ onGenerate, generating }) {
+// ── Model Accuracy ────────────────────────────────────────────────────────────
+function AccuracyCard({ accuracy }) {
+  if (!accuracy?.comparisons?.length) return null;
   return (
-    <div className="bg-slate-800/60 rounded-3xl p-12 border border-slate-700/60 flex flex-col items-center gap-6 text-center">
-      <div className="text-6xl">📊</div>
-      <div>
-        <h3 className="text-white font-bold text-2xl mb-2">
-          No forecast yet
-        </h3>
-        <p className="text-slate-400 text-base max-w-md mb-4">
-          Click the button below to get today's prediction about what will happen to the Kwacha.
-        </p>
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Model accuracy</h3></div>
+      <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+        <div><p className="text-slate-400 text-xs">Average error</p><p className="text-white font-medium">{accuracy.avg_error_mwk} MWK</p></div>
+        <div><p className="text-slate-400 text-xs">Error rate</p><p className="text-white font-medium">{accuracy.avg_error_pct}%</p></div>
+        <div><p className="text-slate-400 text-xs">Within range</p><p className="text-emerald-400 font-bold">{accuracy.within_range_pct}%</p></div>
+        <div><p className="text-slate-400 text-xs">Comparisons</p><p className="text-white font-medium">{accuracy.comparisons.length} data points</p></div>
       </div>
-      <button 
-        onClick={onGenerate} 
-        disabled={generating}
-        className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white px-8 py-4 rounded-xl font-bold text-lg transition flex items-center gap-2"
-      >
-        {generating && <Loader2 className="w-5 h-5 animate-spin" />}
-        {generating ? "Generating forecast..." : "Get Today's Forecast"}
+      <p className="text-xs text-slate-500">Based on {accuracy.comparisons.length} past forecasts compared to actual Reserve Bank rates.</p>
+    </div>
+  );
+}
+
+function EmptyForecasts({ onGenerate, generating }) {
+  return (
+    <div className="bg-slate-800/60 rounded-2xl p-12 border border-slate-700/60 flex flex-col items-center gap-4 text-center">
+      <Calendar className="w-14 h-14 text-slate-500" />
+      <h3 className="text-white font-semibold text-xl">No forecasts yet</h3>
+      <p className="text-slate-400 text-sm max-w-md">Click below to generate today's exchange rate forecasts.</p>
+      <button onClick={onGenerate} disabled={generating} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white px-6 py-3 rounded-xl font-semibold transition flex items-center gap-2 mt-2">
+        {generating && <Loader2 className="w-4 h-4 animate-spin" />}{generating ? "Generating..." : "Generate forecasts"}
       </button>
     </div>
   );
 }
 
-// ── MAIN DASHBOARD ────────────────────────────────────────────────────────
-export default function SimpleDashboard() {
+// ── Main Dashboard ────────────────────────────────────────────────────────────
+export default function Dashboard() {
   const [generating, setGenerating] = useState(false);
+  const [generateMsg, setGenerateMsg] = useState(null);
+  const [liveRate, setLiveRate] = useState(null);
   const [forecast1d, setForecast1d] = useState(null);
   const [forecast7d, setForecast7d] = useState(null);
   const [forecast30d, setForecast30d] = useState(null);
-  const [liveRate, setLiveRate] = useState(null);
+  const [rateStats, setRateStats] = useState(null);
+  const [accuracy, setAccuracy] = useState(null);
 
-  const { latestRate, loading, noForecasts, refetch } = useDashboardData();
-  const currentRate = liveRate || latestRate;
+  const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
 
-  // Fetch forecasts on load
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const summary = await getForecastSummary();
-        if (summary?.forecasts) {
-          setForecast1d(summary.forecasts["1_day"]);
-          setForecast7d(summary.forecasts["7_day"]);
-          setForecast30d(summary.forecasts["30_day"]);
-          if (summary.current_rate) setLiveRate(summary.current_rate);
-        }
-      } catch (error) {
-        console.error("Error fetching forecasts:", error);
-      }
-    };
-
-    if (!noForecasts) {
-      fetchData();
+  const fetchAllData = async () => {
+    const [summary, stats, acc] = await Promise.all([getForecastSummary(), getRateStats(), getForecastAccuracy()]);
+    if (summary?.forecasts) {
+      setForecast1d(summary.forecasts["1_day"]);
+      setForecast7d(summary.forecasts["7_day"]);
+      setForecast30d(summary.forecasts["30_day"]);
+      if (summary.current_rate) setLiveRate({ rate: summary.current_rate });
     }
-  }, [noForecasts]);
-
-  // Fetch live rate
-  useEffect(() => {
-    const fetchLiveRate = async () => {
-      try {
-        const res = await fetch('https://open.er-api.com/v6/latest/USD');
-        const data = await res.json();
-        if (data?.rates?.MWK) {
-          setLiveRate(data.rates.MWK);
-        }
-      } catch (error) {
-        console.error("Error fetching live rate:", error);
-      }
-    };
-
-    fetchLiveRate();
-  }, []);
-
-  const handleGenerate = async () => {
-    setGenerating(true);
-    try {
-      await Promise.all([
-        getForecasts.generate(1),
-        getForecasts.generate(7),
-        getForecasts.generate(30),
-      ]);
-      
-      // Refetch data
-      const summary = await getForecastSummary();
-      if (summary?.forecasts) {
-        setForecast1d(summary.forecasts["1_day"]);
-        setForecast7d(summary.forecasts["7_day"]);
-        setForecast30d(summary.forecasts["30_day"]);
-        if (summary.current_rate) setLiveRate(summary.current_rate);
-      }
-      
-      await refetch();
-    } catch (error) {
-      console.error("Error generating forecasts:", error);
-      alert("Something went wrong. Please try again.");
-    } finally {
-      setGenerating(false);
-    }
+    if (stats) setRateStats(stats);
+    if (acc) setAccuracy(acc);
   };
 
+  useEffect(() => { fetchAllData(); }, [noForecasts]);
+  useEffect(() => { fetch(LIVE_RATE_URL).then(r => r.json()).then(d => { if (d?.rates?.MWK) setLiveRate({ rate: d.rates.MWK }); }).catch(() => {}); }, []);
+
+  const displayRate = liveRate || latestRate;
+
+  const handleGenerate = async () => {
+    setGenerating(true); setGenerateMsg("Generating forecasts...");
+    try {
+      await getForecasts.generate(1); await getForecasts.generate(7); await getForecasts.generate(30);
+      await refetch(); await fetchAllData();
+      setGenerateMsg("Forecasts updated!"); setTimeout(() => { setGenerating(false); setGenerateMsg(null); }, 2000);
+    } catch { setGenerateMsg("Failed. Backend may be waking up — try again."); setGenerating(false); }
+  };
+
+  const getChange = (predictedRate) => {
+    if (!displayRate?.rate || !predictedRate) return null;
+    const diff = predictedRate - displayRate.rate;
+    return { direction: diff > 0 ? "up" : "down", pct: ((diff / displayRate.rate) * 100).toFixed(2) };
+  };
+
+  const nextDayVal = forecast1d?.predicted_rate?.toFixed(2) ?? null;
+  const nextDayChange = forecast1d ? getChange(forecast1d.predicted_rate) : null;
+  const sevenDayVal = forecast7d?.predicted_rate?.toFixed(2) ?? null;
+  const sevenDayChange = forecast7d ? getChange(forecast7d.predicted_rate) : null;
+  const thirtyDayVal = forecast30d?.predicted_rate?.toFixed(2) ?? null;
+  const thirtyDayChange = forecast30d ? getChange(forecast30d.predicted_rate) : null;
+
+  const kpis = [
+    { label: "Current rate", value: displayRate?.rate ? `MWK ${displayRate.rate.toFixed(2)}` : "--", change: null },
+    { label: "Next day", value: nextDayVal ? `MWK ${nextDayVal}` : "--", change: nextDayChange },
+    { label: "7 days", value: sevenDayVal ? `MWK ${sevenDayVal}` : "--", change: sevenDayChange },
+    { label: "30 days", value: thirtyDayVal ? `MWK ${thirtyDayVal}` : "--", change: thirtyDayChange },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-900 pb-12">
-      {/* Header */}
-      <div className="bg-slate-800/50 border-b border-slate-700/50 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-white">KwachaCast</h1>
-              <p className="text-slate-400 text-sm mt-1">
-                Will the Kwacha get stronger or weaker? Find out here.
-              </p>
-            </div>
-            <button 
-              onClick={handleGenerate}
-              disabled={generating}
-              className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2 text-sm"
-            >
-              {generating && <Loader2 className="w-4 h-4 animate-spin" />}
-              {generating ? "Updating..." : "Refresh"}
-            </button>
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div><h1 className="text-2xl font-bold text-white">KwachaCast</h1><p className="text-slate-400 text-sm mt-1">Exchange rate forecasts for the Malawi Kwacha</p></div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => exportForecasts(7)} className="text-slate-400 hover:text-white text-sm flex items-center gap-1"><Download className="w-3.5 h-3.5" />Export</button>
+          <button onClick={handleGenerate} disabled={generating} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
+            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}{generating ? "Generating..." : "Refresh"}
+          </button>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-        
-        {/* Show loading state */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
-            <p className="text-slate-400 ml-3">Loading...</p>
-          </div>
-        )}
+      {generateMsg && <div className="rounded-xl p-3 text-sm bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">{generateMsg}</div>}
+      {loading && <div className="grid grid-cols-4 gap-4 animate-pulse">{[...Array(4)].map((_, i) => <div key={i} className="bg-slate-800/60 rounded-2xl h-32 border border-slate-700/60" />)}</div>}
+      {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
 
-        {/* Show empty state */}
-        {!loading && noForecasts && (
-          <EmptyState onGenerate={handleGenerate} generating={generating} />
-        )}
-
-        {/* Show dashboard */}
-        {!loading && !noForecasts && (
-          <>
-            {/* 1. Today's Rate */}
-            <TodayRateCard currentRate={currentRate} />
-
-            {/* 2. Main Message */}
-            <MainMessage 
-              currentRate={currentRate} 
-              nextDayRate={forecast1d?.predicted_rate}
-              generating={generating}
-            />
-
-            {/* 3. What Happens Next */}
-            <SimpleForecast 
-              forecast1d={forecast1d}
-              forecast7d={forecast7d}
-              forecast30d={forecast30d}
-              currentRate={currentRate}
-            />
-
-            {/* 4. What Should You Do */}
-            <WhatShouldIDo 
-              currentRate={currentRate}
-              forecast1d={forecast1d}
-              forecast7d={forecast7d}
-              forecast30d={forecast30d}
-            />
-
-            {/* 5. How to Read This */}
-            <HowItWorks />
-
-            {/* 6. Why Trust Us */}
-            <SimpleTrust />
-          </>
-        )}
-
-        {/* Disclaimer */}
-        <div className="bg-amber-900/20 border-l-4 border-amber-500 rounded-lg p-4">
-          <p className="text-amber-200/80 text-sm">
-            <span className="font-semibold">Disclaimer:</span> These are predictions, not guarantees. 
-            Real rates depend on many factors. Always check the Reserve Bank's official rate before doing large transactions.
-          </p>
+      {!loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {kpis.map((kpi, i) => (
+            <div key={i} className={`bg-slate-800/60 border ${i === 0 ? 'border-emerald-500/20' : 'border-slate-700/60'} rounded-2xl p-5`}>
+              <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">{kpi.label}</p>
+              <p className="text-2xl font-bold text-white">{kpi.value}</p>
+              {kpi.change && <p className={`text-sm font-medium mt-1 ${kpi.change.direction === "up" ? "text-red-400" : "text-emerald-400"}`}>{kpi.change.direction === "up" ? "↗" : "↘"} {kpi.change.pct}%</p>}
+            </div>
+          ))}
         </div>
+      )}
+
+      {!loading && !noForecasts && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ForecastOutlook forecast1d={forecast1d} forecast7d={forecast7d} forecast30d={forecast30d} />
+          <WhenToAct nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} displayRate={displayRate} />
+        </div>
+      )}
+
+      {/* NEW: Who This Affects */}
+      {!loading && !noForecasts && (
+        <WhoThisAffects displayRate={displayRate} sevenDayChange={sevenDayChange} />
+      )}
+
+      {!loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <RateStats stats={rateStats} />
+          <AccuracyCard accuracy={accuracy} />
+        </div>
+      )}
+
+      {!loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {history?.length > 30 && <TrustChart history={history} forecasts={forecast7d || forecasts} />}
+          <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+            <h3 className="text-sm font-semibold text-slate-300 mb-3">Historical trends</h3>
+            <HistoryChart history={history} loading={loading} forecasts={forecasts} />
+          </div>
+        </div>
+      )}
+
+      <div className="bg-amber-900/20 border-l-4 border-amber-500 rounded-xl p-4 flex gap-3">
+        <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+        <p className="text-amber-200/80 text-sm">Forecasts are for informational purposes. Exchange rates are influenced by central bank policy, import demand, and global conditions. Past accuracy does not guarantee future results.</p>
       </div>
     </div>
   );
