@@ -1,5 +1,7 @@
 import os
 import sys
+import io, csv
+from fastapi import Response
 import pandas as pd
 import numpy as np
 from datetime import date, datetime, timedelta
@@ -473,3 +475,85 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
     
     background_tasks.add_task(_run_retrain)
     return {"status": "training_started", "message": "Model retraining started."}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADVANCED ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/accuracy")
+def get_forecast_accuracy(db: Session = Depends(get_db)):
+    """Compare past forecasts against actual rates to show model accuracy."""
+    # Get forecasts from 7 days ago
+    past_date = date.today() - timedelta(days=7)
+    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=7)
+    
+    if not records:
+        return {"message": "No historical forecasts to compare yet. Generate forecasts daily for 7+ days."}
+    
+    results = []
+    for f in records:
+        actual = db.query(ExchangeRate).filter(ExchangeRate.date == f.target_date).first()
+        if actual:
+            error = abs(f.predicted_rate - actual.rate)
+            results.append({
+                "target_date": str(f.target_date),
+                "predicted": f.predicted_rate,
+                "actual": actual.rate,
+                "error_mwk": round(error, 2),
+                "error_pct": round(error / actual.rate * 100, 4),
+                "within_range": f.lower_bound <= actual.rate <= f.upper_bound if f.lower_bound and f.upper_bound else None,
+            })
+    
+    if not results:
+        return {"message": "No matching actual rates found for comparison yet."}
+    
+    return {
+        "model": "arimax",
+        "forecast_date": str(records[0].forecast_date),
+        "comparisons": results,
+        "avg_error_mwk": round(sum(r["error_mwk"] for r in results) / len(results), 2),
+        "avg_error_pct": round(sum(r["error_pct"] for r in results) / len(results), 4),
+        "within_range_pct": round(sum(1 for r in results if r["within_range"]) / len(results) * 100, 1),
+    }
+
+
+@router.get("/quick")
+def get_quick_forecast(db: Session = Depends(get_db)):
+    """Get a quick one-line forecast summary - perfect for bots and notifications."""
+    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=7)
+    if not records:
+        return {"message": "No forecasts available. Generate first."}
+    
+    today_rate = crud.get_latest_rate(db)
+    last = records[-1]
+    diff = last.predicted_rate - today_rate.rate
+    direction = "↗" if diff > 0 else "↘"
+    
+    return {
+        "message": f"MWK/USD: {today_rate.rate:,.2f} | 7-day: {last.predicted_rate:,.2f} ({direction} {abs(diff):,.2f})",
+        "current_rate": today_rate.rate,
+        "forecast_7d": last.predicted_rate,
+        "change_mwk": round(diff, 2),
+        "change_pct": round(diff / today_rate.rate * 100, 2),
+    }
+
+
+@router.get("/export")
+def export_forecasts(horizon: int = Query(default=7), format: str = Query(default="json"), db: Session = Depends(get_db)):
+    """Export forecasts in JSON or CSV format."""
+    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=horizon)
+    if not records:
+        raise HTTPException(status_code=404, detail="No forecasts available. Run POST /generate first.")
+    
+    data = [{"forecast_date": str(r.forecast_date), "target_date": str(r.target_date),
+             "predicted_rate": r.predicted_rate, "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records]
+    
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=["forecast_date", "target_date", "predicted_rate", "lower_bound", "upper_bound"])
+        writer.writeheader()
+        writer.writerows(data)
+        return Response(content=output.getvalue(), media_type="text/csv",
+                       headers={"Content-Disposition": f"attachment; filename=kwachacast_forecast_{horizon}d.csv"})
+    
+    return {"model": "arimax", "horizon": horizon, "forecasts": data}

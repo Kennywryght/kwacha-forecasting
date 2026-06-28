@@ -55,3 +55,17 @@ def get_model_performance(db: Session = Depends(get_db)):
     
     # Nothing found
     return {"models": []}
+
+@router.get("/health")
+def get_models_health():
+    """Check which models are loaded and their status."""
+    from api.routes.forecasts import _models
+    return {
+        "total_loaded": len(_models),
+        "models": {
+            name: {
+                "is_fitted": m.get("is_fitted", getattr(m, 'is_fitted', False)) if isinstance(m, dict) else getattr(m, 'is_fitted', False)
+            }
+            for name, m in _models.items()
+        }
+    }
