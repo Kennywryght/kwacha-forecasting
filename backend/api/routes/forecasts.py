@@ -1,6 +1,7 @@
 import os
 import sys
 import pandas as pd
+import numpy as np
 from datetime import date, datetime, timedelta
 from threading import Lock
 
@@ -106,6 +107,76 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
     return {"dates": [], "predicted": [], "lower_bound": [], "upper_bound": []}
 
 
+def _predict_ml_model(model_data: dict, horizon: int) -> dict:
+    """
+    Generate predictions from XGBoost/LightGBM models.
+    These models need feature data to predict future values.
+    """
+    from db.database import SessionLocal
+    from db.models import ExchangeRate
+    
+    model = model_data.get("model")
+    feature_cols = model_data.get("features", [])
+    
+    if model is None:
+        raise ValueError("No model loaded")
+    
+    # Get recent data to build features
+    db = SessionLocal()
+    rates = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).limit(90).all()
+    db.close()
+    
+    if len(rates) < 30:
+        raise ValueError("Not enough data for ML prediction")
+    
+    # Build feature dataframe from recent rates
+    recent_df = pd.DataFrame([{'date': r.date, 'rate': float(r.rate)} for r in rates])
+    recent_df['date'] = pd.to_datetime(recent_df['date'])
+    recent_df = recent_df.sort_values('date')
+    
+    # Run feature engineering
+    from ml.pipeline.feature_engineer import engineer_features
+    df_eng = engineer_features(recent_df, verbose=False)
+    
+    # Get available features
+    available_features = [c for c in feature_cols if c in df_eng.columns]
+    if not available_features:
+        raise ValueError("No matching features found")
+    
+    # Use last row features for prediction (repeated for horizon)
+    last_features = df_eng[available_features].iloc[-1:].fillna(0)
+    
+    predictions = []
+    current_features = last_features.copy()
+    
+    for i in range(horizon):
+        pred = model.predict(current_features)[0]
+        predictions.append(float(pred))
+        
+        # Shift features for next prediction (update lag features)
+        if i + 1 < horizon:
+            # Update rate-dependent features
+            for col in available_features:
+                if 'lag' in col or 'momentum' in col or 'rolling' in col:
+                    current_features[col] = current_features[col].values[0] * 0.999
+    
+    # Generate dates
+    today = date.today()
+    dates = [(today + timedelta(days=i+1)) for i in range(horizon)]
+    
+    # Simple confidence intervals
+    std_pred = np.std(predictions) if len(predictions) > 1 else abs(predictions[0]) * 0.01
+    lower = [p - 1.96 * std_pred for p in predictions]
+    upper = [p + 1.96 * std_pred for p in predictions]
+    
+    return {
+        "dates": dates,
+        "predicted": predictions,
+        "lower_bound": lower,
+        "upper_bound": upper,
+    }
+
+
 def _run_generate(horizon: int):
     """
     Generate forecasts using already-trained models.
@@ -130,28 +201,37 @@ def _run_generate(horizon: int):
 
         logger.info(f"📊 Generating {horizon}-day forecasts using pre-trained models")
         
-        # ---- Individual models (NO retraining, just predict) ----
+        # ---- Individual models ----
         generated_models = []
         for model_name, model in _models.items():
             if model_name == "ensemble":
                 continue
             try:
-                # Skip if model isn't fitted
-                if not getattr(model, 'is_fitted', False):
+                # Check if model is fitted (supports dict-wrapped ML models)
+                is_fitted = False
+                if isinstance(model, dict):
+                    is_fitted = model.get("is_fitted", False)
+                else:
+                    is_fitted = getattr(model, 'is_fitted', False)
+                
+                if not is_fitted:
                     logger.warning(f"{model_name} not fitted — skipping")
                     continue
                 
                 logger.info(f"  Generating {model_name} forecast...")
                 
-                if model_name == "prophet":
-                    # ProphetForecaster.predict() returns dates/predicted/lower/upper
+                # Handle different model types
+                if model_name in ["xgboost", "lightgbm"]:
+                    # Modern ML models
+                    raw = _predict_ml_model(model, horizon)
+                elif model_name == "prophet":
                     if hasattr(model, 'predict'):
                         raw = model.predict(horizon)
                     else:
                         logger.warning("Prophet has no predict() — skipping")
                         continue
                 else:
-                    # ARIMA, ARIMAX, etc.
+                    # ARIMA, ARIMAX
                     raw = model.predict(horizon)
 
                 adjusted = _adjust_forecast_dates(raw, horizon, tomorrow)
@@ -232,7 +312,6 @@ def _run_generate(horizon: int):
 
         logger.info(f"🎯 Forecast generation complete for horizon={horizon}")
         
-        # Mark as completed successfully
         _generation_state.update({
             "completed_at": datetime.now(),
         })
@@ -252,11 +331,6 @@ def get_forecast_status(
     horizon: int = Query(default=7),
     db: Session = Depends(get_db),
 ):
-    """
-    Enhanced status endpoint with generation progress tracking.
-    Returns is_fresh=true when today's ensemble forecast exists for
-    the requested horizon — avoids polling the wrong horizon.
-    """
     if _generation_state["in_progress"]:
         elapsed = 0
         if _generation_state["started_at"]:
@@ -310,9 +384,6 @@ def get_latest_forecasts(
     model: str = Query(default="ensemble"),
     db: Session = Depends(get_db),
 ):
-    """
-    Get the latest forecasts for a specific model and horizon.
-    """
     records = crud.get_latest_forecasts(db, model_name=model, horizon=horizon)
     if not records:
         raise HTTPException(
@@ -347,11 +418,6 @@ def generate_forecasts(
     horizon: int = Query(default=7),
     db: Session = Depends(get_db),
 ):
-    """
-    Generate forecasts using already-loaded & trained models.
-    Prevents duplicate generation requests.
-    No model retraining happens here - models must be pre-trained.
-    """
     if not _models:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
     
@@ -393,10 +459,6 @@ def retrain_models(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """
-    SEPARATE endpoint for retraining models with latest data.
-    This is where actual model training happens.
-    """
     if not _models:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
     
@@ -407,12 +469,9 @@ def retrain_models(
         }
     
     def _run_retrain():
-        """Background task for model retraining"""
         _generation_state.update({
-            "in_progress": True,
-            "started_at": datetime.now(),
-            "horizon": None,
-            "error": None,
+            "in_progress": True, "started_at": datetime.now(),
+            "horizon": None, "error": None,
         })
         
         db_session = SessionLocal()
@@ -448,7 +507,6 @@ def retrain_models(
             if "arimax" in _models:
                 try:
                     logger.info("  Retraining ARIMAX...")
-                    # Add engineered features for ARIMAX
                     from ml.pipeline.feature_engineer import engineer_features
                     rates_eng = engineer_features(rates.copy(), verbose=False)
                     _models["arimax"].fit(rates_eng)
@@ -463,10 +521,7 @@ def retrain_models(
             _generation_state["error"] = str(e)
         finally:
             db_session.close()
-            _generation_state.update({
-                "in_progress": False,
-                "completed_at": datetime.now(),
-            })
+            _generation_state.update({"in_progress": False, "completed_at": datetime.now()})
     
     background_tasks.add_task(_run_retrain)
     return {
@@ -480,9 +535,6 @@ def get_all_model_forecasts(
     horizon: int = Query(default=7),
     db: Session = Depends(get_db),
 ):
-    """
-    Get forecasts from all loaded models for a specific horizon.
-    """
     if _generation_state["in_progress"]:
         return {
             "status": "generating",
@@ -514,9 +566,6 @@ def get_all_model_forecasts(
 
 @router.get("/generation-status")
 def get_generation_status():
-    """
-    Get current generation state for monitoring.
-    """
     elapsed = 0
     if _generation_state["started_at"] and _generation_state["in_progress"]:
         elapsed = int((datetime.now() - _generation_state["started_at"]).total_seconds())
