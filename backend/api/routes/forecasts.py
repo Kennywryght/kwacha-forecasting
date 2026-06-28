@@ -436,7 +436,7 @@ def generate_forecasts(background_tasks: BackgroundTasks, horizon: int = Query(d
 
 @router.post("/retrain")
 def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Retrain models with latest data."""
+    """Retrain models with latest data. Supports ARIMA, ARIMAX, XGBoost, and LightGBM."""
     if not _models:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
     
@@ -452,18 +452,74 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
             if rates.empty:
                 return
             
-            for model_name in ["arima", "arimax"]:
-                if model_name in _models:
-                    try:
-                        logger.info(f"  Retraining {model_name.upper()}...")
-                        if model_name == "arimax":
-                            from ml.pipeline.feature_engineer import engineer_features
-                            _models[model_name].fit(engineer_features(rates.copy(), verbose=False))
+            # Retrain ARIMA
+            if "arima" in _models:
+                try:
+                    logger.info("  Retraining ARIMA...")
+                    _models["arima"].fit(rates)
+                    logger.info("  ✅ ARIMA retrained")
+                except Exception as e:
+                    logger.error(f"  ❌ ARIMA retraining failed: {e}")
+            
+            # Retrain ARIMAX (needs feature engineering)
+            if "arimax" in _models:
+                try:
+                    logger.info("  Retraining ARIMAX...")
+                    from ml.pipeline.feature_engineer import engineer_features
+                    _models["arimax"].fit(engineer_features(rates.copy(), verbose=False))
+                    logger.info("  ✅ ARIMAX retrained")
+                except Exception as e:
+                    logger.error(f"  ❌ ARIMAX retraining failed: {e}")
+            
+            # Retrain XGBoost
+            if "xgboost" in _models:
+                try:
+                    logger.info("  Retraining XGBoost...")
+                    from ml.pipeline.feature_engineer import engineer_features
+                    import joblib
+                    xgb_data = _models["xgboost"]
+                    features = xgb_data.get("features", [])
+                    if features:
+                        rates_eng = engineer_features(rates.copy(), verbose=False)
+                        available = [c for c in features if c in rates_eng.columns]
+                        if available:
+                            X = rates_eng[available].fillna(0)
+                            y = rates_eng['rate']
+                            xgb_data["model"].fit(X, y)
+                            artifacts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ml', 'artifacts')
+                            joblib.dump(xgb_data["model"], os.path.join(artifacts_dir, 'xgboost_model.joblib'))
+                            logger.info("  ✅ XGBoost retrained and saved")
                         else:
-                            _models[model_name].fit(rates)
-                        logger.info(f"  ✅ {model_name.upper()} retrained")
-                    except Exception as e:
-                        logger.error(f"  ❌ {model_name} retraining failed: {e}")
+                            logger.warning("  ⚠️ XGBoost: no matching features")
+                    else:
+                        logger.warning("  ⚠️ XGBoost: no feature list")
+                except Exception as e:
+                    logger.error(f"  ❌ XGBoost retraining failed: {e}")
+            
+            # Retrain LightGBM
+            if "lightgbm" in _models:
+                try:
+                    logger.info("  Retraining LightGBM...")
+                    from ml.pipeline.feature_engineer import engineer_features
+                    import joblib
+                    lgb_data = _models["lightgbm"]
+                    features = lgb_data.get("features", [])
+                    if features:
+                        rates_eng = engineer_features(rates.copy(), verbose=False)
+                        available = [c for c in features if c in rates_eng.columns]
+                        if available:
+                            X = rates_eng[available].fillna(0)
+                            y = rates_eng['rate']
+                            lgb_data["model"].fit(X, y)
+                            artifacts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ml', 'artifacts')
+                            joblib.dump(lgb_data["model"], os.path.join(artifacts_dir, 'lightgbm_model.joblib'))
+                            logger.info("  ✅ LightGBM retrained and saved")
+                        else:
+                            logger.warning("  ⚠️ LightGBM: no matching features")
+                    else:
+                        logger.warning("  ⚠️ LightGBM: no feature list")
+                except Exception as e:
+                    logger.error(f"  ❌ LightGBM retraining failed: {e}")
             
             logger.info("🎯 Model retraining complete")
         except Exception as e:
@@ -476,6 +532,7 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
     background_tasks.add_task(_run_retrain)
     return {"status": "training_started", "message": "Model retraining started."}
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ADVANCED ENDPOINTS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -483,7 +540,6 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
 @router.get("/accuracy")
 def get_forecast_accuracy(db: Session = Depends(get_db)):
     """Compare past forecasts against actual rates to show model accuracy."""
-    # Get forecasts from 7 days ago
     past_date = date.today() - timedelta(days=7)
     records = crud.get_latest_forecasts(db, model_name="arimax", horizon=7)
     

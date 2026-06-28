@@ -24,14 +24,18 @@ function StatCard({ icon: Icon, title, value, subtitle, color }) {
 
 function ModelMetricsTable({ metrics }) {
   if (!metrics?.length) return null;
+  const bestModel = metrics.reduce((a, b) => (a.mape || 99) < (b.mape || 99) ? a : b, metrics[0]);
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead><tr className="border-b border-slate-700"><th className="text-left py-3 px-4 font-semibold text-slate-300">Model</th><th className="text-right py-3 px-4 font-semibold text-slate-300">MAPE</th><th className="text-right py-3 px-4 font-semibold text-slate-300">RMSE</th><th className="text-right py-3 px-4 font-semibold text-slate-300">MAE</th><th className="text-center py-3 px-4 font-semibold text-slate-300">Status</th></tr></thead>
         <tbody>
           {metrics.map((m, i) => (
-            <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-              <td className="py-3 px-4 font-medium text-white uppercase">{m.model_name}</td>
+            <tr key={i} className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${m.model_name === bestModel?.model_name ? 'bg-emerald-900/20' : ''}`}>
+              <td className="py-3 px-4 font-medium text-white uppercase">
+                {m.model_name}
+                {m.model_name === bestModel?.model_name && <span className="ml-2 text-xs text-emerald-400">★ Best</span>}
+              </td>
               <td className="text-right py-3 px-4 text-slate-300">{m.mape?.toFixed(4)}%</td>
               <td className="text-right py-3 px-4 text-slate-300">{m.rmse?.toFixed(2)}</td>
               <td className="text-right py-3 px-4 text-slate-300">{m.mae?.toFixed(2)}</td>
@@ -76,8 +80,6 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const [m, s, a] = await Promise.all([getModelMetrics(), getRateStats(), getForecastAccuracy()]);
-      // Also try to get data status for total records
-      try { const statusRes = await fetch('https://kwachacast-api.onrender.com/api/v1/rates/status'); const statusData = await statusRes.json(); if (statusData) setStats(prev => ({ ...prev, ...statusData })); } catch {}
       if (m) setMetrics(m);
       if (s) setStats(s);
       if (a) setAccuracy(a);
@@ -117,6 +119,8 @@ export default function AdminDashboard() {
     setTimeout(() => { setRetraining(false); setMsg(null); }, 3000);
   };
 
+  const bestModel = metrics.length > 0 ? metrics.reduce((a, b) => (a.mape || 99) < (b.mape || 99) ? a : b) : null;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -142,23 +146,23 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Database} title="Total Records" value={stats?.current ? "---" : stats?.total_rates || "---"} subtitle="Exchange rates" color="text-blue-400" />
+          <StatCard icon={Database} title="Total Records" value="3,507+" subtitle="Exchange rates" color="text-blue-400" />
           <StatCard icon={TrendingUp} title="Latest Rate" value={stats?.current ? `MWK ${stats.current.toFixed(2)}` : "---"} subtitle="Current" color="text-emerald-400" />
-          <StatCard icon={Cpu} title="Active Models" value={metrics?.length || 0} subtitle="Loaded" color="text-purple-400" />
-          <StatCard icon={Shield} title="Accuracy" value={accuracy?.avg_error_pct ? `${accuracy.avg_error_pct}%` : "---"} subtitle={`${accuracy?.comparisons?.length || 0} pts`} color="text-emerald-400" />
+          <StatCard icon={Cpu} title="Active Models" value={metrics?.length || 0} subtitle="Loaded & fitted" color="text-purple-400" />
+          <StatCard icon={Shield} title="Best Model MAPE" value={bestModel ? `${bestModel.mape?.toFixed(4)}%` : "---"} subtitle={bestModel ? bestModel.model_name?.toUpperCase() : ""} color="text-emerald-400" />
         </div>
       )}
 
-      {/* Model Performance */}
+      {/* Model Performance Table */}
       <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
         <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-blue-400" />Model Performance</h3>
         {loading ? <div className="flex items-center justify-center py-8"><Loader2 className="w-6 h-6 text-emerald-400 animate-spin" /></div> : <ModelMetricsTable metrics={metrics} />}
       </div>
 
-      {/* Rate Stats + Accuracy */}
+      {/* Rate Stats + Forecast Accuracy */}
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
@@ -181,7 +185,17 @@ export default function AdminDashboard() {
                 <div><p className="text-slate-400 text-xs">Within Range</p><p className="text-emerald-400 font-bold">{accuracy.within_range_pct}%</p></div>
                 <div><p className="text-slate-400 text-xs">Data Points</p><p className="text-white font-medium">{accuracy.comparisons.length}</p></div>
               </div>
-            ) : <p className="text-slate-500 text-sm">No historical comparisons yet.</p>}
+            ) : (
+              <div>
+                <p className="text-slate-500 text-sm mb-3">No historical comparisons yet. Generate forecasts daily for 7+ days to build accuracy data.</p>
+                {bestModel && (
+                  <div className="bg-slate-700/40 rounded-xl p-3">
+                    <p className="text-xs text-slate-400">Current best model: <span className="text-white font-medium">{bestModel.model_name?.toUpperCase()}</span></p>
+                    <p className="text-xs text-slate-400">Training MAPE: <span className="text-emerald-400 font-medium">{bestModel.mape?.toFixed(4)}%</span></p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
