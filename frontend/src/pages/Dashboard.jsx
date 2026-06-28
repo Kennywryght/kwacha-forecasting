@@ -44,9 +44,27 @@ function TrustChart({ history, forecasts }) {
 // ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const allData = [];
-  if (forecast1d?.predicted_rate) allData.push({ day: 1, value: Number(forecast1d.predicted_rate?.toFixed(2)), horizon: "Next day", date: fmtDate(forecast1d.target_date) });
-  if (forecast7d?.forecasts) forecast7d.forecasts.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "7 days", date: fmtDate(v?.target_date) }));
-  if (forecast30d?.forecasts) forecast30d.forecasts.forEach((v, i) => allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "30 days", date: fmtDate(v?.target_date) }));
+  const seenDates = new Set();
+  
+  if (forecast1d?.predicted_rate && forecast1d?.target_date) {
+    const d = forecast1d.target_date;
+    if (!seenDates.has(d)) { seenDates.add(d); allData.push({ day: 1, value: Number(forecast1d.predicted_rate?.toFixed(2)), horizon: "Next day", date: fmtDate(d) }); }
+  }
+  
+  if (forecast7d?.forecasts) {
+    forecast7d.forecasts.forEach((v, i) => {
+      const d = v?.target_date;
+      if (d && !seenDates.has(d)) { seenDates.add(d); allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "7 days", date: fmtDate(d) }); }
+    });
+  }
+  
+  if (forecast30d?.forecasts) {
+    forecast30d.forecasts.forEach((v, i) => {
+      const d = v?.target_date;
+      if (d && !seenDates.has(d)) { seenDates.add(d); allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "30 days", date: fmtDate(d) }); }
+    });
+  }
+  
   if (!allData.length) return null;
 
   return (
@@ -258,10 +276,10 @@ export default function Dashboard() {
 
   const nextDayVal = forecast1d?.predicted_rate?.toFixed(2) ?? null;
   const nextDayChange = forecast1d ? getChange(forecast1d.predicted_rate) : null;
-  const sevenDayVal = forecast7d?.predicted_rate?.toFixed(2) ?? null;
-  const sevenDayChange = forecast7d ? getChange(forecast7d.predicted_rate) : null;
-  const thirtyDayVal = forecast30d?.predicted_rate?.toFixed(2) ?? null;
-  const thirtyDayChange = forecast30d ? getChange(forecast30d.predicted_rate) : null;
+  const sevenDayVal = forecast7d?.predicted_rate?.toFixed(2) ?? forecast7d?.forecasts?.[6]?.predicted_rate?.toFixed(2) ?? null;
+  const sevenDayChange = forecast7d ? getChange(forecast7d.predicted_rate || forecast7d?.forecasts?.[6]?.predicted_rate) : null;
+  const thirtyDayVal = forecast30d?.predicted_rate?.toFixed(2) ?? forecast30d?.forecasts?.[29]?.predicted_rate?.toFixed(2) ?? null;
+  const thirtyDayChange = forecast30d ? getChange(forecast30d.predicted_rate || forecast30d?.forecasts?.[29]?.predicted_rate) : null;
 
   const kpis = [
     { label: "Current rate", value: displayRate?.rate ? `MWK ${displayRate.rate.toFixed(2)}` : "--", change: null },
