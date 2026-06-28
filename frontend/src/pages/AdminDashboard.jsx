@@ -76,6 +76,8 @@ export default function AdminDashboard() {
     setLoading(true);
     try {
       const [m, s, a] = await Promise.all([getModelMetrics(), getRateStats(), getForecastAccuracy()]);
+      // Also try to get data status for total records
+      try { const statusRes = await fetch('https://kwachacast-api.onrender.com/api/v1/rates/status'); const statusData = await statusRes.json(); if (statusData) setStats(prev => ({ ...prev, ...statusData })); } catch {}
       if (m) setMetrics(m);
       if (s) setStats(s);
       if (a) setAccuracy(a);
