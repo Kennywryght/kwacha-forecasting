@@ -1,9 +1,10 @@
 ﻿import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
-import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, get7DayForecast, get30DayForecast } from "../utils/api";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
-import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home, Clock, HelpCircle } from "lucide-react";
+import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, get7DayForecast, get30DayForecast, getRateAlerts } from "../utils/api";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home, Clock, HelpCircle, Bell, ArrowRight } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
@@ -42,7 +43,7 @@ function TrustChart({ history, forecasts }) {
       <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Accuracy & transparency</h3></div>
       <p className="text-xs text-slate-500 mb-4">{hasForecasts ? "Our forecasts (dotted) vs actual rates." : "Historical rates for the last 30 days."}</p>
       <ResponsiveContainer width="100%" height={220}>
-        <ComposedChart data={data}>
+        <LineChart data={data}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
@@ -55,57 +56,25 @@ function TrustChart({ history, forecasts }) {
           <Legend />
           <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual rate" />
           {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} name="Our forecast" connectNulls={false} />}
-        </ComposedChart>
+        </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
 // ── Error Bar Dot Renderer ────────────────────────────────────────────────────
-function ErrorBarDot({ cx, cy, payload, color, dataKey }) {
+function ErrorBarDot({ cx, cy, payload, color }) {
   if (!payload) return null;
-  
   const lower = payload.lower;
   const upper = payload.upper;
-  
   if (lower == null || upper == null) {
     return <circle cx={cx} cy={cy} r={3} fill={color} stroke="#1e293b" strokeWidth={1.5} />;
   }
-  
-  // Calculate the Y positions for error bars
-  // We need to map the data values to pixel positions
-  // The chart domain will handle this through Recharts
-  const range = upper - lower;
-  const valueRange = range * 2; // Estimate the visible range
-  
-  // Draw the dot
   return (
     <g>
-      {/* Error bar line */}
-      <line 
-        x1={cx} y1={cy - 6} 
-        x2={cx} y2={cy + 6} 
-        stroke={color} 
-        strokeWidth={1.5}
-        strokeOpacity={0.6}
-      />
-      {/* Top cap */}
-      <line 
-        x1={cx - 3} y1={cy - 6} 
-        x2={cx + 3} y2={cy - 6} 
-        stroke={color} 
-        strokeWidth={1.5}
-        strokeOpacity={0.6}
-      />
-      {/* Bottom cap */}
-      <line 
-        x1={cx - 3} y1={cy + 6} 
-        x2={cx + 3} y2={cy + 6} 
-        stroke={color} 
-        strokeWidth={1.5}
-        strokeOpacity={0.6}
-      />
-      {/* Center dot */}
+      <line x1={cx} y1={cy - 6} x2={cx} y2={cy + 6} stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
+      <line x1={cx - 3} y1={cy - 6} x2={cx + 3} y2={cy - 6} stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
+      <line x1={cx - 3} y1={cy + 6} x2={cx + 3} y2={cy + 6} stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
       <circle cx={cx} cy={cy} r={4} fill={color} stroke="#1e293b" strokeWidth={1.5} />
     </g>
   );
@@ -120,14 +89,7 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
     const d = forecast1d.target_date;
     if (!seenDates.has(d)) { 
       seenDates.add(d); 
-      allData.push({ 
-        day: 1, 
-        value: Number(forecast1d.predicted_rate?.toFixed(2)), 
-        lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null,
-        upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null,
-        horizon: "Next day", 
-        date: fmtDate(d) 
-      }); 
+      allData.push({ day: 1, value: Number(forecast1d.predicted_rate?.toFixed(2)), lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null, upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null, horizon: "Next day", date: fmtDate(d) }); 
     }
   }
   if (forecast7d?.forecasts) {
@@ -135,14 +97,7 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       const d = v?.target_date;
       if (d && !seenDates.has(d)) { 
         seenDates.add(d); 
-        allData.push({ 
-          day: i + 1, 
-          value: Number(v?.predicted_rate?.toFixed(2)), 
-          lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
-          upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
-          horizon: "7 days", 
-          date: fmtDate(d) 
-        }); 
+        allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, horizon: "7 days", date: fmtDate(d) }); 
       }
     });
   }
@@ -151,14 +106,7 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       const d = v?.target_date;
       if (d && !seenDates.has(d)) { 
         seenDates.add(d); 
-        allData.push({ 
-          day: i + 1, 
-          value: Number(v?.predicted_rate?.toFixed(2)), 
-          lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
-          upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
-          horizon: "30 days", 
-          date: fmtDate(d) 
-        }); 
+        allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, horizon: "30 days", date: fmtDate(d) }); 
       }
     });
   }
@@ -169,11 +117,7 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-slate-500 mb-4">
-        {hasConfidenceIntervals 
-          ? "Projected Kwacha movement with 95% confidence intervals shown on each point." 
-          : "Projected Kwacha movement across timeframes."}
-      </p>
+      <p className="text-xs text-slate-500 mb-4">{hasConfidenceIntervals ? "Projected Kwacha movement with 95% confidence intervals." : "Projected Kwacha movement across timeframes."}</p>
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -189,53 +133,18 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
             }} 
             labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
-          
-          {/* Next day line with error bar dots */}
-          <Line 
-            type="monotone" 
-            dataKey="value" 
-            data={allData.filter(d => d.horizon === "Next day")} 
-            stroke="#34d399" 
-            strokeWidth={2} 
-            dot={(props) => <ErrorBarDot {...props} color="#34d399" />}
-            name="Next day" 
-          />
-          
-          {/* 7 days line with error bar dots */}
-          <Line 
-            type="monotone" 
-            dataKey="value" 
-            data={allData.filter(d => d.horizon === "7 days")} 
-            stroke="#60a5fa" 
-            strokeWidth={2} 
-            dot={(props) => <ErrorBarDot {...props} color="#60a5fa" />}
-            name="7 days" 
-          />
-          
-          {/* 30 days line with error bar dots */}
-          <Line 
-            type="monotone" 
-            dataKey="value" 
-            data={allData.filter(d => d.horizon === "30 days")} 
-            stroke="#fbbf24" 
-            strokeWidth={2} 
-            dot={(props) => <ErrorBarDot {...props} color="#fbbf24" />}
-            name="30 days" 
-          />
+          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "Next day")} stroke="#34d399" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#34d399" />} name="Next day" />
+          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "7 days")} stroke="#60a5fa" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#60a5fa" />} name="7 days" />
+          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "30 days")} stroke="#fbbf24" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#fbbf24" />} name="30 days" />
         </LineChart>
       </ResponsiveContainer>
-      
-      {/* How to interpret guide */}
       {hasConfidenceIntervals && (
         <details className="mt-3 group">
-          <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400 transition">
-            💡 How to interpret this chart
-          </summary>
+          <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400 transition">💡 How to interpret this chart</summary>
           <div className="mt-2 p-3 bg-slate-700/40 rounded-lg text-xs text-slate-400 space-y-1.5">
             <p>• <span className="text-slate-300 font-medium">Dots with vertical lines</span> show the predicted rate with its 95% confidence interval.</p>
-            <p>• The <span className="text-slate-300 font-medium">vertical line</span> through each dot represents the range where we expect the actual rate to fall.</p>
-            <p>• <span className="text-slate-300 font-medium">Longer lines</span> = more uncertainty. 30-day forecasts naturally have wider intervals than 1-day.</p>
-            <p>• Hover over any point to see the exact predicted value and confidence bounds.</p>
+            <p>• <span className="text-slate-300 font-medium">Longer lines</span> = more uncertainty. 30-day forecasts naturally have wider intervals.</p>
+            <p>• Hover over any point to see exact values.</p>
           </div>
         </details>
       )}
@@ -384,6 +293,43 @@ function AccuracyCard({ accuracy }) {
   );
 }
 
+// ── Rate Alerts (NEW) ────────────────────────────────────────────────────────
+function RateAlerts({ alerts }) {
+  if (!alerts?.alerts?.length) return null;
+  
+  return (
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="flex items-center gap-2 mb-3">
+        <Bell className="w-4 h-4 text-yellow-400" />
+        <h3 className="text-sm font-semibold text-slate-300">Rate alerts</h3>
+        {alerts.alerts.length > 0 && (
+          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">{alerts.alerts.length}</span>
+        )}
+      </div>
+      <div className="space-y-2">
+        {alerts.alerts.slice(0, 3).map((alert, i) => (
+          <div key={i} className={`p-3 rounded-lg text-xs ${
+            alert.level === 'warning' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' :
+            alert.level === 'critical' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
+            'bg-blue-500/10 border border-blue-500/20 text-blue-400'
+          }`}>
+            <div className="flex items-start gap-2">
+              <Bell className="w-3 h-3 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">{alert.message}</p>
+                {alert.detail && <p className="mt-0.5 opacity-80">{alert.detail}</p>}
+              </div>
+            </div>
+          </div>
+        ))}
+        {alerts.alerts.length > 3 && (
+          <p className="text-xs text-slate-500 text-center">+{alerts.alerts.length - 3} more alerts</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Quick FAQ ────────────────────────────────────────────────────────────────
 function QuickFAQ() {
   return (
@@ -434,12 +380,14 @@ export default function Dashboard() {
   const [forecast30d, setForecast30d] = useState(null);
   const [rateStats, setRateStats] = useState(null);
   const [accuracy, setAccuracy] = useState(null);
+  const [alerts, setAlerts] = useState(null);
 
   const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
 
   const fetchAllData = async () => {
-    const [summary, stats, acc, full7d, full30d] = await Promise.all([
-      getForecastSummary(), getRateStats(), getForecastAccuracy(), get7DayForecast(), get30DayForecast()
+    const [summary, stats, acc, full7d, full30d, alertsData] = await Promise.all([
+      getForecastSummary(), getRateStats(), getForecastAccuracy(), get7DayForecast(), get30DayForecast(),
+      getRateAlerts().catch(() => null)
     ]);
     if (summary?.forecasts) {
       setForecast1d(summary.forecasts["1_day"]);
@@ -449,6 +397,7 @@ export default function Dashboard() {
     }
     if (stats) setRateStats(stats);
     if (acc) setAccuracy(acc);
+    if (alertsData) setAlerts(alertsData);
   };
 
   useEffect(() => { fetchAllData(); }, [noForecasts]);
@@ -506,6 +455,9 @@ export default function Dashboard() {
       {loading && <div className="grid grid-cols-4 gap-4 animate-pulse">{[...Array(4)].map((_, i) => <div key={i} className="bg-slate-800/60 rounded-2xl h-32 border border-slate-700/60" />)}</div>}
       {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
 
+      {/* Rate Alerts (NEW) */}
+      {!loading && alerts && <RateAlerts alerts={alerts} />}
+
       {/* KPI Cards */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -550,7 +502,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {history?.length > 30 && <TrustChart history={history} forecasts={forecast7d || forecasts} />}
           <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-            <h3 className="text-sm font-semibold text-slate-300 mb-3">Historical trends</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-slate-300">Historical trends</h3>
+              <Link to="/history" className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition">
+                View full history <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
             <HistoryChart history={history} loading={loading} forecasts={forecasts} />
           </div>
         </div>
