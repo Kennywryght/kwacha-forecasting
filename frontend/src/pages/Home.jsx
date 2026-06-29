@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { TrendingUp, BarChart3, Zap, Shield, ArrowRight, RefreshCw, Download, Smartphone } from 'lucide-react'
+import { TrendingUp, BarChart3, Zap, Shield, ArrowRight, RefreshCw, Download, Smartphone, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD'
@@ -11,6 +11,7 @@ export default function Home() {
   const [error, setError] = useState(null)
   const [deferredPrompt, setDeferredPrompt] = useState(null)
   const [isInstallable, setIsInstallable] = useState(false)
+  const [previousRate, setPreviousRate] = useState(null)
   const { t } = useLanguage()
 
   // Listen for PWA install prompt
@@ -44,6 +45,10 @@ export default function Home() {
       const res = await fetch(LIVE_RATE_URL)
       const data = await res.json()
       if (data?.rates?.MWK) {
+        // Store previous rate before updating
+        if (liveRate?.rate) {
+          setPreviousRate(liveRate.rate)
+        }
         setLiveRate({
           rate: data.rates.MWK,
           date: data.time_last_update_utc?.split(' ')[0] || new Date().toISOString().split('T')[0],
@@ -57,7 +62,12 @@ export default function Home() {
       try {
         const res = await fetch('https://kwachacast-api.onrender.com/api/v1/rates/latest')
         const data = await res.json()
-        if (data?.rate) setLiveRate(data)
+        if (data?.rate) {
+          if (liveRate?.rate) {
+            setPreviousRate(liveRate.rate)
+          }
+          setLiveRate(data)
+        }
       } catch {}
     } finally {
       setLoading(false)
@@ -65,6 +75,20 @@ export default function Home() {
   }
 
   useEffect(() => { fetchLiveRate() }, [])
+
+  // Calculate rate change
+  const getRateChange = () => {
+    if (!previousRate || !liveRate?.rate) return null
+    const diff = liveRate.rate - previousRate
+    const pct = (diff / previousRate) * 100
+    return {
+      direction: diff > 0.01 ? 'up' : diff < -0.01 ? 'down' : 'stable',
+      diff: Math.abs(diff).toFixed(2),
+      pct: Math.abs(pct).toFixed(3)
+    }
+  }
+
+  const rateChange = getRateChange()
 
   const features = [
     { icon: TrendingUp, title: t('dailyForecasts', { default: 'Daily forecasts' }), description: t('dailyForecastsDesc', { default: 'Next day, 7-day, and 30-day exchange rate predictions updated every business day.' }) },
@@ -98,7 +122,7 @@ export default function Home() {
                 <Link to="/about" className="border border-slate-600 hover:border-slate-400 transition px-6 py-3 rounded-xl font-semibold">
                   {t('learnMore', { default: 'Learn more' })}
                 </Link>
-                {/* PWA Install Button - Now Gray */}
+                {/* PWA Install Button - Gray */}
                 {isInstallable && (
                   <button onClick={handleInstall} className="bg-slate-600 hover:bg-slate-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
                     <Download className="w-4 h-4" /> {t('installApp', { default: 'Install App' })}
@@ -107,7 +131,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* LIVE RATE CARD */}
+            {/* LIVE RATE CARD - ENHANCED */}
             <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-slate-400 text-sm uppercase tracking-wider">{t('liveExchangeRate', { default: 'Live exchange rate' })}</p>
@@ -120,15 +144,48 @@ export default function Home() {
                 <div className="animate-pulse space-y-3">
                   <div className="h-14 bg-slate-800 rounded w-48"></div>
                   <div className="h-4 bg-slate-800 rounded w-32"></div>
+                  <div className="h-4 bg-slate-800 rounded w-40"></div>
                 </div>
               ) : error && !liveRate ? (
                 <div className="text-red-400 text-sm">{error}</div>
               ) : (
                 <>
-                  <h2 className="text-5xl lg:text-6xl font-bold text-white mb-2">
-                    {liveRate?.rate?.toFixed(2)}
-                  </h2>
+                  {/* Rate Display with Trend Indicator */}
+                  <div className="flex items-baseline gap-3 mb-2">
+                    <h2 className="text-5xl lg:text-6xl font-bold text-white">
+                      {liveRate?.rate?.toFixed(2)}
+                    </h2>
+                    {rateChange && (
+                      <div className={`flex items-center gap-1 text-sm font-semibold ${
+                        rateChange.direction === 'up' ? 'text-red-400' : 
+                        rateChange.direction === 'down' ? 'text-emerald-400' : 'text-slate-400'
+                      }`}>
+                        {rateChange.direction === 'up' && <ArrowUpRight className="w-4 h-4" />}
+                        {rateChange.direction === 'down' && <ArrowDownRight className="w-4 h-4" />}
+                        {rateChange.direction === 'stable' && <Minus className="w-4 h-4" />}
+                        <span>
+                          {rateChange.direction === 'up' ? '+' : rateChange.direction === 'down' ? '-' : ''}
+                          {rateChange.diff} ({rateChange.pct}%)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  
                   <p className="text-lg text-slate-300 mb-4">MWK per USD</p>
+                  
+                  {/* Rate Change Details */}
+                  {rateChange && (
+                    <div className={`mb-4 p-3 rounded-xl text-xs font-medium ${
+                      rateChange.direction === 'up' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
+                      rateChange.direction === 'down' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' :
+                      'bg-slate-800 border border-slate-700 text-slate-400'
+                    }`}>
+                      {rateChange.direction === 'up' && '↗ Kwacha weakening — rate has increased since last update'}
+                      {rateChange.direction === 'down' && '↘ Kwacha strengthening — rate has decreased since last update'}
+                      {rateChange.direction === 'stable' && '→ Rate is stable — no significant change since last update'}
+                    </div>
+                  )}
+                  
                   <div className="space-y-2 text-sm text-slate-400">
                     <p>{t('source', { default: 'Source' })}: <span className="text-slate-300">{liveRate?.source || '—'}</span></p>
                     <p>{t('updated', { default: 'Updated' })}: <span className="text-slate-300">{liveRate?.date || '—'}</span></p>

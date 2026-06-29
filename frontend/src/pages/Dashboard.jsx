@@ -2,7 +2,7 @@
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
 import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, get7DayForecast, get30DayForecast } from "../utils/api";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend, Area } from "recharts";
 import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home, Clock, HelpCircle } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
@@ -61,52 +61,219 @@ function TrustChart({ history, forecasts }) {
   );
 }
 
-// ── Forecast Outlook ──────────────────────────────────────────────────────────
+// ── Forecast Outlook (UPDATED WITH CONFIDENCE INTERVALS) ──────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const allData = [];
   const seenDates = new Set();
   
+  // Collect 1-day forecast with confidence bounds
   if (forecast1d?.predicted_rate && forecast1d?.target_date) {
     const d = forecast1d.target_date;
-    if (!seenDates.has(d)) { seenDates.add(d); allData.push({ day: 1, value: Number(forecast1d.predicted_rate?.toFixed(2)), horizon: "Next day", date: fmtDate(d) }); }
+    if (!seenDates.has(d)) { 
+      seenDates.add(d); 
+      allData.push({ 
+        day: 1, 
+        value: Number(forecast1d.predicted_rate?.toFixed(2)), 
+        lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null,
+        upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null,
+        horizon: "Next day", 
+        date: fmtDate(d) 
+      }); 
+    }
   }
+  
+  // Collect 7-day forecasts with confidence bounds
   if (forecast7d?.forecasts) {
     forecast7d.forecasts.forEach((v, i) => {
       const d = v?.target_date;
-      if (d && !seenDates.has(d)) { seenDates.add(d); allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "7 days", date: fmtDate(d) }); }
+      if (d && !seenDates.has(d)) { 
+        seenDates.add(d); 
+        allData.push({ 
+          day: i + 1, 
+          value: Number(v?.predicted_rate?.toFixed(2)), 
+          lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
+          upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
+          horizon: "7 days", 
+          date: fmtDate(d) 
+        }); 
+      }
     });
   }
+  
+  // Collect 30-day forecasts with confidence bounds
   if (forecast30d?.forecasts) {
     forecast30d.forecasts.forEach((v, i) => {
       const d = v?.target_date;
-      if (d && !seenDates.has(d)) { seenDates.add(d); allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), horizon: "30 days", date: fmtDate(d) }); }
+      if (d && !seenDates.has(d)) { 
+        seenDates.add(d); 
+        allData.push({ 
+          day: i + 1, 
+          value: Number(v?.predicted_rate?.toFixed(2)), 
+          lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
+          upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
+          horizon: "30 days", 
+          date: fmtDate(d) 
+        }); 
+      }
     });
   }
+  
   if (!allData.length) return null;
+
+  // Check if we have confidence intervals to display
+  const hasConfidenceIntervals = allData.some(d => d.lower != null && d.upper != null);
 
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-slate-500 mb-4">Projected Kwacha movement across timeframes.</p>
+      <p className="text-xs text-slate-500 mb-4">
+        {hasConfidenceIntervals 
+          ? "Projected Kwacha movement with 95% confidence intervals (shaded bands)." 
+          : "Projected Kwacha movement across timeframes."}
+      </p>
       <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={allData}>
+        <ComposedChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
-          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
-            formatter={(v) => [`MWK ${Number(v).toFixed(2)}`, undefined]} 
-            labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
+          <XAxis 
+            dataKey="day" 
+            tick={{ fill: '#94a3b8', fontSize: 10 }} 
+            label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} 
+          />
+          <YAxis 
+            tick={{ fill: '#94a3b8', fontSize: 10 }} 
+            domain={['auto', 'auto']} 
+            tickFormatter={(v) => v.toFixed(0)} 
+          />
+          <Tooltip 
+            contentStyle={{ 
+              backgroundColor: '#1e293b', 
+              border: 'none', 
+              borderRadius: '8px', 
+              color: '#e2e8f0', 
+              fontSize: 12 
+            }} 
+            formatter={(v, name) => {
+              if (v == null) return ['N/A', name];
+              if (name === 'value') return [`MWK ${Number(v).toFixed(2)}`, 'Predicted rate'];
+              if (name === 'lower') return [`MWK ${Number(v).toFixed(2)}`, 'Lower bound (95%)'];
+              if (name === 'upper') return [`MWK ${Number(v).toFixed(2)}`, 'Upper bound (95%)'];
+              return [`MWK ${Number(v).toFixed(2)}`, name];
+            }} 
+            labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} 
+          />
           <Legend />
-          {[{ label: "Next day", color: "#34d399" }, { label: "7 days", color: "#60a5fa" }, { label: "30 days", color: "#fbbf24" }].map(h => (
-            <Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 2 }} name={h.label} />
-          ))}
-        </LineChart>
+          
+          {/* Confidence interval bands for Next day */}
+          {hasConfidenceIntervals && (() => {
+            const nextDayData = allData.filter(d => d.horizon === "Next day" && d.lower != null);
+            if (nextDayData.length === 0) return null;
+            return (
+              <Area
+                type="monotone"
+                dataKey="upper"
+                data={nextDayData}
+                stroke="none"
+                fill="#34d399"
+                fillOpacity={0.1}
+                name="Next day CI"
+              />
+            );
+          })()}
+          
+          {/* Confidence interval bands for 7 days */}
+          {hasConfidenceIntervals && (() => {
+            const sevenDayData = allData.filter(d => d.horizon === "7 days" && d.lower != null);
+            if (sevenDayData.length === 0) return null;
+            return (
+              <>
+                <Area
+                  type="monotone"
+                  dataKey="upper"
+                  data={sevenDayData}
+                  stroke="none"
+                  fill="#60a5fa"
+                  fillOpacity={0.1}
+                  name="7-day CI"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="lower"
+                  data={sevenDayData}
+                  stroke="none"
+                  fill="#60a5fa"
+                  fillOpacity={0.1}
+                  name="7-day CI"
+                />
+              </>
+            );
+          })()}
+          
+          {/* Confidence interval bands for 30 days */}
+          {hasConfidenceIntervals && (() => {
+            const thirtyDayData = allData.filter(d => d.horizon === "30 days" && d.lower != null);
+            if (thirtyDayData.length === 0) return null;
+            return (
+              <>
+                <Area
+                  type="monotone"
+                  dataKey="upper"
+                  data={thirtyDayData}
+                  stroke="none"
+                  fill="#fbbf24"
+                  fillOpacity={0.1}
+                  name="30-day CI"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="lower"
+                  data={thirtyDayData}
+                  stroke="none"
+                  fill="#fbbf24"
+                  fillOpacity={0.1}
+                  name="30-day CI"
+                />
+              </>
+            );
+          })()}
+          
+          {/* Prediction lines */}
+          {[
+            { label: "Next day", color: "#34d399" }, 
+            { label: "7 days", color: "#60a5fa" }, 
+            { label: "30 days", color: "#fbbf24" }
+          ].map(h => {
+            const horizonData = allData.filter(d => d.horizon === h.label);
+            if (horizonData.length === 0) return null;
+            return (
+              <Line 
+                key={h.label} 
+                type="monotone" 
+                dataKey="value" 
+                data={horizonData} 
+                stroke={h.color} 
+                strokeWidth={2} 
+                dot={{ r: 2 }} 
+                name={h.label} 
+              />
+            );
+          })}
+        </ComposedChart>
       </ResponsiveContainer>
+      
+      {hasConfidenceIntervals && (
+        <div className="mt-3 p-3 bg-slate-700/30 rounded-lg">
+          <p className="text-xs text-slate-400">
+            💡 <span className="text-slate-300 font-medium">How to read this chart:</span> The shaded bands show the 95% confidence interval — 
+            we expect the actual rate to fall within this range. Wider bands indicate more uncertainty. 
+            As you look further into the future, the bands naturally widen because uncertainty increases with time.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
-// ── Key Insight Banner (NEW) ──────────────────────────────────────────────────
+// ── Key Insight Banner ────────────────────────────────────────────────────────
 function KeyInsight({ displayRate, sevenDayChange, accuracy }) {
   const pct = parseFloat(sevenDayChange?.pct || 0);
   const isStable = Math.abs(pct) < 0.3;
@@ -131,7 +298,7 @@ function KeyInsight({ displayRate, sevenDayChange, accuracy }) {
   );
 }
 
-// ── Last Updated (NEW) ────────────────────────────────────────────────────────
+// ── Last Updated ──────────────────────────────────────────────────────────────
 function LastUpdated({ forecast1d }) {
   return (
     <div className="text-slate-500 text-xs flex items-center gap-1">
@@ -247,7 +414,7 @@ function AccuracyCard({ accuracy }) {
   );
 }
 
-// ── Quick FAQ (NEW) ──────────────────────────────────────────────────────────
+// ── Quick FAQ ────────────────────────────────────────────────────────────────
 function QuickFAQ() {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
