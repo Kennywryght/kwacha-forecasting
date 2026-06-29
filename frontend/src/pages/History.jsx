@@ -13,6 +13,7 @@ import {
   Line,
   BarChart,
   Bar,
+  Cell,
 } from "recharts";
 import { Calendar, TrendingUp, Database, Clock, Activity, ArrowUp, ArrowDown, BarChart3, Info } from "lucide-react";
 
@@ -282,7 +283,7 @@ export default function History() {
         </div>
       )}
 
-      {/* Volatility Chart */}
+      {/* Volatility Chart - FIXED */}
       {data && !loading && volatilityData && showVolatility && (
         <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
           <div className="flex items-center justify-between mb-4">
@@ -290,11 +291,15 @@ export default function History() {
             <div className="flex items-center gap-4 text-xs text-slate-400">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-red-400 rounded-sm"></div>
-                <span>Rate weakening</span>
+                <span>Rate weakening (↗)</span>
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-emerald-400 rounded-sm"></div>
-                <span>Rate strengthening</span>
+                <span>Rate strengthening (↘)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-3 h-3 bg-slate-500 rounded-sm"></div>
+                <span>No change</span>
               </div>
             </div>
           </div>
@@ -320,23 +325,31 @@ export default function History() {
                 }}
                 formatter={(v, name) => {
                   const val = Number(v);
-                  const direction = val > 0 ? 'Weakening' : val < 0 ? 'Strengthening' : 'No change';
-                  return [`${val > 0 ? '+' : ''}${val.toFixed(2)} MWK`, direction];
-                }} 
+                  if (name === 'absChange') return [`${val.toFixed(2)} MWK`, 'Absolute change'];
+                  return [v, name];
+                }}
+                labelFormatter={(label) => {
+                  const entry = volatilityData.find(d => d.date === label);
+                  if (!entry) return label;
+                  const direction = entry.change > 0 ? '↗ Weakening' : entry.change < 0 ? '↘ Strengthening' : '→ No change';
+                  return `${label} — ${direction}`;
+                }}
               />
               <Bar 
                 dataKey="change" 
-                fill="#ef4444"
-                fillOpacity={0.7}
                 radius={[2, 2, 0, 0]}
               >
-                {volatilityData.map((entry, index) => (
-                  <rect 
-                    key={index}
-                    fill={entry.change >= 0 ? '#ef4444' : '#34d399'}
-                    fillOpacity={0.7}
-                  />
-                ))}
+                {volatilityData.map((entry, index) => {
+                  let color;
+                  if (entry.change > 0) {
+                    color = '#ef4444'; // Red for weakening
+                  } else if (entry.change < 0) {
+                    color = '#34d399'; // Green for strengthening
+                  } else {
+                    color = '#64748b'; // Gray for no change
+                  }
+                  return <Cell key={`cell-${index}`} fill={color} fillOpacity={0.7} />;
+                })}
               </Bar>
               <ReferenceLine y={0} stroke="#475569" />
             </BarChart>
@@ -347,7 +360,7 @@ export default function History() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
               <div className="bg-slate-700/40 rounded-lg p-3">
                 <p className="text-slate-400 text-xs">Avg daily change</p>
-                <p className={`text-sm font-semibold ${Number(stats.avgDailyChange) > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                <p className={`text-sm font-semibold ${Number(stats.avgDailyChange) > 0 ? 'text-red-400' : Number(stats.avgDailyChange) < 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
                   {Number(stats.avgDailyChange) > 0 ? '+' : ''}{stats.avgDailyChange} MWK
                 </p>
               </div>
