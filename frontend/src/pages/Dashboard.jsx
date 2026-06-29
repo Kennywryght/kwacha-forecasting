@@ -119,28 +119,24 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-slate-500 mb-4">
-        {hasConfidenceIntervals 
-          ? "Projected Kwacha movement with 95% confidence intervals." 
-          : "Projected Kwacha movement across timeframes."}
-      </p>
+      <p className="text-xs text-slate-500 mb-4">Projected Kwacha movement across timeframes.</p>
       <ResponsiveContainer width="100%" height={250}>
-        <ComposedChart data={allData}>
+        <LineChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
           <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} />
           <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
             formatter={(v, name) => {
               if (v == null) return ['N/A', name];
-              if (name === 'value') return [`MWK ${Number(v).toFixed(2)}`, 'Predicted rate'];
-              if (name === 'lower') return [`MWK ${Number(v).toFixed(2)}`, 'Lower bound (95%)'];
-              if (name === 'upper') return [`MWK ${Number(v).toFixed(2)}`, 'Upper bound (95%)'];
+              if (name === 'value') return [`MWK ${Number(v).toFixed(2)}`, 'Predicted'];
+              if (name === 'lower') return [`MWK ${Number(v).toFixed(2)}`, 'Lower (95%)'];
+              if (name === 'upper') return [`MWK ${Number(v).toFixed(2)}`, 'Upper (95%)'];
               return [`MWK ${Number(v).toFixed(2)}`, name];
             }} 
             labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
           
-          {/* Confidence interval bands */}
+          {/* Subtle confidence interval bands */}
           {hasConfidenceIntervals && [
             { label: "Next day", color: "#34d399" },
             { label: "7 days", color: "#60a5fa" }, 
@@ -150,8 +146,8 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
             if (horizonData.length === 0) return null;
             return (
               <React.Fragment key={`ci-${h.label}`}>
-                <Area type="monotone" dataKey="upper" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.1} name={`${h.label} CI`} />
-                <Area type="monotone" dataKey="lower" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.1} name={`${h.label} CI`} />
+                <Area type="monotone" dataKey="upper" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.08} name={`${h.label} upper`} />
+                <Area type="monotone" dataKey="lower" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.08} name={`${h.label} lower`} />
               </React.Fragment>
             );
           })}
@@ -160,8 +156,23 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
           {[{ label: "Next day", color: "#34d399" }, { label: "7 days", color: "#60a5fa" }, { label: "30 days", color: "#fbbf24" }].map(h => (
             <Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 2 }} name={h.label} />
           ))}
-        </ComposedChart>
+        </LineChart>
       </ResponsiveContainer>
+      
+      {/* How to interpret guide */}
+      {hasConfidenceIntervals && (
+        <details className="mt-3 group">
+          <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400 transition">
+            💡 How to interpret this chart
+          </summary>
+          <div className="mt-2 p-3 bg-slate-700/40 rounded-lg text-xs text-slate-400 space-y-1.5">
+            <p>• <span className="text-slate-300 font-medium">Solid lines</span> show the predicted exchange rate for each timeframe.</p>
+            <p>• <span className="text-slate-300 font-medium">Shaded bands</span> around each line show the 95% confidence interval — we expect the actual rate to fall within this range.</p>
+            <p>• <span className="text-slate-300 font-medium">Wider bands</span> = more uncertainty. The 30-day forecast is naturally less certain than the next day.</p>
+            <p>• Hover over any point to see the exact predicted value and confidence bounds.</p>
+          </div>
+        </details>
+      )}
     </div>
   );
 }
