@@ -61,12 +61,11 @@ function TrustChart({ history, forecasts }) {
   );
 }
 
-// ── Forecast Outlook (UPDATED WITH CONFIDENCE INTERVALS) ──────────────────────
+// ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const allData = [];
   const seenDates = new Set();
   
-  // Collect 1-day forecast with confidence bounds
   if (forecast1d?.predicted_rate && forecast1d?.target_date) {
     const d = forecast1d.target_date;
     if (!seenDates.has(d)) { 
@@ -81,8 +80,6 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       }); 
     }
   }
-  
-  // Collect 7-day forecasts with confidence bounds
   if (forecast7d?.forecasts) {
     forecast7d.forecasts.forEach((v, i) => {
       const d = v?.target_date;
@@ -99,8 +96,6 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       }
     });
   }
-  
-  // Collect 30-day forecasts with confidence bounds
   if (forecast30d?.forecasts) {
     forecast30d.forecasts.forEach((v, i) => {
       const d = v?.target_date;
@@ -117,10 +112,8 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       }
     });
   }
-  
   if (!allData.length) return null;
 
-  // Check if we have confidence intervals to display
   const hasConfidenceIntervals = allData.some(d => d.lower != null && d.upper != null);
 
   return (
@@ -128,30 +121,15 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
       <p className="text-xs text-slate-500 mb-4">
         {hasConfidenceIntervals 
-          ? "Projected Kwacha movement with 95% confidence intervals (shaded bands)." 
+          ? "Projected Kwacha movement with 95% confidence intervals." 
           : "Projected Kwacha movement across timeframes."}
       </p>
       <ResponsiveContainer width="100%" height={250}>
         <ComposedChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis 
-            dataKey="day" 
-            tick={{ fill: '#94a3b8', fontSize: 10 }} 
-            label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} 
-          />
-          <YAxis 
-            tick={{ fill: '#94a3b8', fontSize: 10 }} 
-            domain={['auto', 'auto']} 
-            tickFormatter={(v) => v.toFixed(0)} 
-          />
-          <Tooltip 
-            contentStyle={{ 
-              backgroundColor: '#1e293b', 
-              border: 'none', 
-              borderRadius: '8px', 
-              color: '#e2e8f0', 
-              fontSize: 12 
-            }} 
+          <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
             formatter={(v, name) => {
               if (v == null) return ['N/A', name];
               if (name === 'value') return [`MWK ${Number(v).toFixed(2)}`, 'Predicted rate'];
@@ -159,116 +137,31 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
               if (name === 'upper') return [`MWK ${Number(v).toFixed(2)}`, 'Upper bound (95%)'];
               return [`MWK ${Number(v).toFixed(2)}`, name];
             }} 
-            labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} 
-          />
+            labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
           
-          {/* Confidence interval bands for Next day */}
-          {hasConfidenceIntervals && (() => {
-            const nextDayData = allData.filter(d => d.horizon === "Next day" && d.lower != null);
-            if (nextDayData.length === 0) return null;
-            return (
-              <Area
-                type="monotone"
-                dataKey="upper"
-                data={nextDayData}
-                stroke="none"
-                fill="#34d399"
-                fillOpacity={0.1}
-                name="Next day CI"
-              />
-            );
-          })()}
-          
-          {/* Confidence interval bands for 7 days */}
-          {hasConfidenceIntervals && (() => {
-            const sevenDayData = allData.filter(d => d.horizon === "7 days" && d.lower != null);
-            if (sevenDayData.length === 0) return null;
-            return (
-              <>
-                <Area
-                  type="monotone"
-                  dataKey="upper"
-                  data={sevenDayData}
-                  stroke="none"
-                  fill="#60a5fa"
-                  fillOpacity={0.1}
-                  name="7-day CI"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="lower"
-                  data={sevenDayData}
-                  stroke="none"
-                  fill="#60a5fa"
-                  fillOpacity={0.1}
-                  name="7-day CI"
-                />
-              </>
-            );
-          })()}
-          
-          {/* Confidence interval bands for 30 days */}
-          {hasConfidenceIntervals && (() => {
-            const thirtyDayData = allData.filter(d => d.horizon === "30 days" && d.lower != null);
-            if (thirtyDayData.length === 0) return null;
-            return (
-              <>
-                <Area
-                  type="monotone"
-                  dataKey="upper"
-                  data={thirtyDayData}
-                  stroke="none"
-                  fill="#fbbf24"
-                  fillOpacity={0.1}
-                  name="30-day CI"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="lower"
-                  data={thirtyDayData}
-                  stroke="none"
-                  fill="#fbbf24"
-                  fillOpacity={0.1}
-                  name="30-day CI"
-                />
-              </>
-            );
-          })()}
-          
-          {/* Prediction lines */}
-          {[
-            { label: "Next day", color: "#34d399" }, 
+          {/* Confidence interval bands */}
+          {hasConfidenceIntervals && [
+            { label: "Next day", color: "#34d399" },
             { label: "7 days", color: "#60a5fa" }, 
             { label: "30 days", color: "#fbbf24" }
           ].map(h => {
-            const horizonData = allData.filter(d => d.horizon === h.label);
+            const horizonData = allData.filter(d => d.horizon === h.label && d.lower != null && d.upper != null);
             if (horizonData.length === 0) return null;
             return (
-              <Line 
-                key={h.label} 
-                type="monotone" 
-                dataKey="value" 
-                data={horizonData} 
-                stroke={h.color} 
-                strokeWidth={2} 
-                dot={{ r: 2 }} 
-                name={h.label} 
-              />
+              <React.Fragment key={`ci-${h.label}`}>
+                <Area type="monotone" dataKey="upper" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.1} name={`${h.label} CI`} />
+                <Area type="monotone" dataKey="lower" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.1} name={`${h.label} CI`} />
+              </React.Fragment>
             );
           })}
+          
+          {/* Prediction lines */}
+          {[{ label: "Next day", color: "#34d399" }, { label: "7 days", color: "#60a5fa" }, { label: "30 days", color: "#fbbf24" }].map(h => (
+            <Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 2 }} name={h.label} />
+          ))}
         </ComposedChart>
       </ResponsiveContainer>
-      
-      {hasConfidenceIntervals && (
-        <div className="mt-3 p-3 bg-slate-700/30 rounded-lg">
-          <p className="text-xs text-slate-400">
-            💡 <span className="text-slate-300 font-medium">How to read this chart:</span> The shaded bands show the 95% confidence interval — 
-            we expect the actual rate to fall within this range. Wider bands indicate more uncertainty. 
-            As you look further into the future, the bands naturally widen because uncertainty increases with time.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
