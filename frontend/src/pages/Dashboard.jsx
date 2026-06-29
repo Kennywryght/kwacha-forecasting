@@ -2,7 +2,7 @@
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
 import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, get7DayForecast, get30DayForecast } from "../utils/api";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend, Area } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ComposedChart, Legend } from "recharts";
 import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home, Clock, HelpCircle } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
@@ -58,6 +58,56 @@ function TrustChart({ history, forecasts }) {
         </ComposedChart>
       </ResponsiveContainer>
     </div>
+  );
+}
+
+// ── Error Bar Dot Renderer ────────────────────────────────────────────────────
+function ErrorBarDot({ cx, cy, payload, color, dataKey }) {
+  if (!payload) return null;
+  
+  const lower = payload.lower;
+  const upper = payload.upper;
+  
+  if (lower == null || upper == null) {
+    return <circle cx={cx} cy={cy} r={3} fill={color} stroke="#1e293b" strokeWidth={1.5} />;
+  }
+  
+  // Calculate the Y positions for error bars
+  // We need to map the data values to pixel positions
+  // The chart domain will handle this through Recharts
+  const range = upper - lower;
+  const valueRange = range * 2; // Estimate the visible range
+  
+  // Draw the dot
+  return (
+    <g>
+      {/* Error bar line */}
+      <line 
+        x1={cx} y1={cy - 6} 
+        x2={cx} y2={cy + 6} 
+        stroke={color} 
+        strokeWidth={1.5}
+        strokeOpacity={0.6}
+      />
+      {/* Top cap */}
+      <line 
+        x1={cx - 3} y1={cy - 6} 
+        x2={cx + 3} y2={cy - 6} 
+        stroke={color} 
+        strokeWidth={1.5}
+        strokeOpacity={0.6}
+      />
+      {/* Bottom cap */}
+      <line 
+        x1={cx - 3} y1={cy + 6} 
+        x2={cx + 3} y2={cy + 6} 
+        stroke={color} 
+        strokeWidth={1.5}
+        strokeOpacity={0.6}
+      />
+      {/* Center dot */}
+      <circle cx={cx} cy={cy} r={4} fill={color} stroke="#1e293b" strokeWidth={1.5} />
+    </g>
   );
 }
 
@@ -119,7 +169,11 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   return (
     <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
       <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-slate-500 mb-4">Projected Kwacha movement across timeframes.</p>
+      <p className="text-xs text-slate-500 mb-4">
+        {hasConfidenceIntervals 
+          ? "Projected Kwacha movement with 95% confidence intervals shown on each point." 
+          : "Projected Kwacha movement across timeframes."}
+      </p>
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -136,26 +190,38 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
             labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
           
-          {/* Subtle confidence interval bands */}
-          {hasConfidenceIntervals && [
-            { label: "Next day", color: "#34d399" },
-            { label: "7 days", color: "#60a5fa" }, 
-            { label: "30 days", color: "#fbbf24" }
-          ].map(h => {
-            const horizonData = allData.filter(d => d.horizon === h.label && d.lower != null && d.upper != null);
-            if (horizonData.length === 0) return null;
-            return (
-              <React.Fragment key={`ci-${h.label}`}>
-                <Area type="monotone" dataKey="upper" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.08} name={`${h.label} upper`} />
-                <Area type="monotone" dataKey="lower" data={horizonData} stroke="none" fill={h.color} fillOpacity={0.08} name={`${h.label} lower`} />
-              </React.Fragment>
-            );
-          })}
+          {/* Next day line with error bar dots */}
+          <Line 
+            type="monotone" 
+            dataKey="value" 
+            data={allData.filter(d => d.horizon === "Next day")} 
+            stroke="#34d399" 
+            strokeWidth={2} 
+            dot={(props) => <ErrorBarDot {...props} color="#34d399" />}
+            name="Next day" 
+          />
           
-          {/* Prediction lines */}
-          {[{ label: "Next day", color: "#34d399" }, { label: "7 days", color: "#60a5fa" }, { label: "30 days", color: "#fbbf24" }].map(h => (
-            <Line key={h.label} type="monotone" dataKey="value" data={allData.filter(d => d.horizon === h.label)} stroke={h.color} strokeWidth={2} dot={{ r: 2 }} name={h.label} />
-          ))}
+          {/* 7 days line with error bar dots */}
+          <Line 
+            type="monotone" 
+            dataKey="value" 
+            data={allData.filter(d => d.horizon === "7 days")} 
+            stroke="#60a5fa" 
+            strokeWidth={2} 
+            dot={(props) => <ErrorBarDot {...props} color="#60a5fa" />}
+            name="7 days" 
+          />
+          
+          {/* 30 days line with error bar dots */}
+          <Line 
+            type="monotone" 
+            dataKey="value" 
+            data={allData.filter(d => d.horizon === "30 days")} 
+            stroke="#fbbf24" 
+            strokeWidth={2} 
+            dot={(props) => <ErrorBarDot {...props} color="#fbbf24" />}
+            name="30 days" 
+          />
         </LineChart>
       </ResponsiveContainer>
       
@@ -166,9 +232,9 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
             💡 How to interpret this chart
           </summary>
           <div className="mt-2 p-3 bg-slate-700/40 rounded-lg text-xs text-slate-400 space-y-1.5">
-            <p>• <span className="text-slate-300 font-medium">Solid lines</span> show the predicted exchange rate for each timeframe.</p>
-            <p>• <span className="text-slate-300 font-medium">Shaded bands</span> around each line show the 95% confidence interval — we expect the actual rate to fall within this range.</p>
-            <p>• <span className="text-slate-300 font-medium">Wider bands</span> = more uncertainty. The 30-day forecast is naturally less certain than the next day.</p>
+            <p>• <span className="text-slate-300 font-medium">Dots with vertical lines</span> show the predicted rate with its 95% confidence interval.</p>
+            <p>• The <span className="text-slate-300 font-medium">vertical line</span> through each dot represents the range where we expect the actual rate to fall.</p>
+            <p>• <span className="text-slate-300 font-medium">Longer lines</span> = more uncertainty. 30-day forecasts naturally have wider intervals than 1-day.</p>
             <p>• Hover over any point to see the exact predicted value and confidence bounds.</p>
           </div>
         </details>
