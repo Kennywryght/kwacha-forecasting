@@ -1,5 +1,5 @@
 ﻿import React from "react";
-import { Target, BarChart3, Shield, BookOpen, Mail, Brain, Layers, LineChart } from "lucide-react";
+import { Target, BarChart3, Shield, Brain, Layers, LineChart } from "lucide-react";
 
 export default function About() {
   return (
@@ -9,45 +9,9 @@ export default function About() {
         <h1 className="text-4xl font-bold text-white mb-4">About KwachaCast</h1>
         <p className="text-slate-400 max-w-2xl mx-auto text-lg">
           An AI-powered exchange rate forecasting system for the Malawi Kwacha, 
-          built as a Data Science capstone project at Mzuzu University.
+          built to help businesses and individuals make informed financial decisions.
         </p>
       </div>
-
-      {/* Project Overview */}
-      <section>
-        <div className="flex items-center gap-3 mb-5">
-          <Target className="w-6 h-6 text-emerald-400" />
-          <h2 className="text-2xl font-bold text-white">Project overview</h2>
-        </div>
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-6 space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-slate-400">Researcher:</span>
-              <span className="text-white ml-2">Kennedy Banda (BSDS0221)</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Supervisor:</span>
-              <span className="text-white ml-2">Dr. Ruben Moyo</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Program:</span>
-              <span className="text-white ml-2">Data Science, Faculty of ICT</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Institution:</span>
-              <span className="text-white ml-2">Mzuzu University</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Year:</span>
-              <span className="text-white ml-2">2026</span>
-            </div>
-            <div>
-              <span className="text-slate-400">Type:</span>
-              <span className="text-white ml-2">Capstone Project</span>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* Problem & Solution */}
       <section>
@@ -146,7 +110,7 @@ export default function About() {
         </div>
       </section>
 
-      {/* Accuracy */}
+      {/* Model Performance */}
       <section>
         <div className="flex items-center gap-3 mb-5">
           <Shield className="w-6 h-6 text-emerald-400" />
@@ -174,7 +138,7 @@ export default function About() {
         </div>
       </section>
 
-      {/* Key features summary */}
+      {/* Key Features */}
       <section>
         <div className="flex items-center gap-3 mb-5">
           <LineChart className="w-6 h-6 text-purple-400" />
@@ -197,7 +161,7 @@ export default function About() {
         </div>
       </section>
 
-      {/* Limitations & disclaimer */}
+      {/* Limitations */}
       <div className="bg-amber-900/10 border border-amber-500/20 rounded-xl p-6">
         <h3 className="text-amber-400 font-semibold text-sm mb-3 uppercase tracking-wider">Limitations & disclaimer</h3>
         <ul className="space-y-2 text-amber-100/80 text-sm">
@@ -218,18 +182,6 @@ export default function About() {
             Past accuracy does not guarantee future performance.
           </li>
         </ul>
-      </div>
-
-      {/* Contact */}
-      <div className="bg-gradient-to-r from-blue-900/20 to-slate-800/60 border border-blue-500/20 rounded-xl p-6 text-center">
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <Mail className="w-5 h-5 text-blue-400" />
-          <h3 className="text-lg font-bold text-white">Contact</h3>
-        </div>
-        <p className="text-slate-400 text-sm">
-          Kennedy Banda • <a href="mailto:kbanda@mzuzuuni.mw" className="text-blue-400 hover:underline">kbanda@mzuzuuni.mw</a>
-        </p>
-        <p className="text-slate-500 text-xs mt-1">Mzuzu University • Data Science Capstone • 2026</p>
       </div>
     </div>
   );
