@@ -20,7 +20,6 @@ function TrustChart({ history, forecasts, historicalForecasts }) {
   
   const forecastMap = {};
   
-  // First priority: historical forecasts from dedicated endpoint
   if (historicalForecasts?.forecast_dates) {
     Object.values(historicalForecasts.forecast_dates).forEach(dayForecasts => {
       dayForecasts.forEach(f => {
@@ -29,7 +28,6 @@ function TrustChart({ history, forecasts, historicalForecasts }) {
       });
     });
   }
-  // Fallback: current forecasts
   else if (forecasts?.forecasts) {
     forecasts.forecasts.forEach(f => {
       const d = String(f.target_date).slice(0, 10);
@@ -75,7 +73,7 @@ function TrustChart({ history, forecasts, historicalForecasts }) {
   );
 }
 
-// ── Error Bar Dot Renderer (BOUNDS APPEAR ON HOVER) ─────────────────────────
+// ── Error Bar Dot Renderer ───────────────────────────────────────────────────
 const ErrorBarDot = ({ cx, cy, payload, color }) => {
   if (!payload) return null;
   const lower = payload.lower;
@@ -105,33 +103,51 @@ const ErrorBarDot = ({ cx, cy, payload, color }) => {
 // ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const allData = [];
-  const seenDates = new Set();
   
+  // Next day - 1 dot
   if (forecast1d?.predicted_rate && forecast1d?.target_date) {
-    const d = forecast1d.target_date;
-    if (!seenDates.has(d)) { 
-      seenDates.add(d); 
-      allData.push({ day: 1, value: Number(forecast1d.predicted_rate?.toFixed(2)), lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null, upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null, horizon: "Next day", date: fmtDate(d) }); 
-    }
+    allData.push({ 
+      day: 1, 
+      value: Number(Number(forecast1d.predicted_rate).toFixed(2)), 
+      lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null, 
+      upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null, 
+      horizon: "Next day", 
+      date: fmtDate(forecast1d.target_date) 
+    });
   }
+  
+  // 7 days - 7 dots
   if (forecast7d?.forecasts) {
     forecast7d.forecasts.forEach((v, i) => {
-      const d = v?.target_date;
-      if (d && !seenDates.has(d)) { 
-        seenDates.add(d); 
-        allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, horizon: "7 days", date: fmtDate(d) }); 
+      if (v?.target_date) {
+        allData.push({ 
+          day: i + 1, 
+          value: Number(Number(v.predicted_rate).toFixed(2)), 
+          lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, 
+          upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, 
+          horizon: "7 days", 
+          date: fmtDate(v.target_date) 
+        });
       }
     });
   }
+  
+  // 30 days - 30 dots
   if (forecast30d?.forecasts) {
     forecast30d.forecasts.forEach((v, i) => {
-      const d = v?.target_date;
-      if (d && !seenDates.has(d)) { 
-        seenDates.add(d); 
-        allData.push({ day: i + 1, value: Number(v?.predicted_rate?.toFixed(2)), lower: v?.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, upper: v?.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, horizon: "30 days", date: fmtDate(d) }); 
+      if (v?.target_date) {
+        allData.push({ 
+          day: i + 1, 
+          value: Number(Number(v.predicted_rate).toFixed(2)), 
+          lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, 
+          upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, 
+          horizon: "30 days", 
+          date: fmtDate(v.target_date) 
+        });
       }
     });
   }
+  
   if (!allData.length) return null;
 
   const hasConfidenceIntervals = allData.some(d => d.lower != null && d.upper != null);
