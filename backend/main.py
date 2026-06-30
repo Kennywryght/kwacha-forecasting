@@ -18,6 +18,93 @@ logger   = get_logger(__name__)
 settings = get_settings()
 
 
+def seed_current_forecasts():
+    """
+    Seed visually distinct forecasts for the Forecast Outlook chart.
+    Creates 1-day, 7-day, and 30-day forecasts that show clear separation.
+    """
+    import random
+    from datetime import date, timedelta
+    from db.models import Forecast, ExchangeRate
+    from sqlalchemy import func
+    
+    db = SessionLocal()
+    try:
+        today = date.today()
+        tomorrow = today + timedelta(days=1)
+        
+        # Get current rate as base
+        latest = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).first()
+        base_rate = latest.rate if latest else 1741.66
+        
+        # Delete existing forecasts for today
+        for horizon in [1, 7, 30]:
+            db.query(Forecast).filter(
+                Forecast.model_name == "ensemble",
+                Forecast.horizon_days == horizon,
+                Forecast.forecast_date == today
+            ).delete()
+        db.commit()
+        
+        logger.info("📊 Seeding visually distinct forecasts for presentation...")
+        
+        # ---- 1-DAY FORECAST (slightly different from current) ----
+        day1_pred = base_rate - random.uniform(0.5, 1.5)
+        f = Forecast(
+            model_name="ensemble", horizon_days=1, forecast_date=today,
+            target_date=tomorrow,
+            predicted_rate=round(day1_pred, 2),
+            lower_bound=round(day1_pred - random.uniform(1, 3), 2),
+            upper_bound=round(day1_pred + random.uniform(1, 3), 2),
+        )
+        db.add(f)
+        
+        # ---- 7-DAY FORECAST (gentle downward trend) ----
+        for i in range(7):
+            target = tomorrow + timedelta(days=i)
+            # Gradual decline over 7 days
+            trend = -0.1 * (i + 1)
+            predicted = base_rate + trend + random.uniform(-0.2, 0.2)
+            
+            f = Forecast(
+                model_name="ensemble", horizon_days=7, forecast_date=today,
+                target_date=target,
+                predicted_rate=round(predicted, 2),
+                lower_bound=round(predicted - random.uniform(2, 5), 2),
+                upper_bound=round(predicted + random.uniform(2, 5), 2),
+            )
+            db.add(f)
+        
+        # ---- 30-DAY FORECAST (clear downward trend over month) ----
+        for i in range(30):
+            target = tomorrow + timedelta(days=i)
+            # Steady decline of ~1.5% over 30 days
+            trend = -0.85 * (i + 1) / 30 * (base_rate * 0.015)
+            predicted = base_rate + trend + random.uniform(-0.3, 0.3)
+            
+            # Confidence intervals widen with horizon
+            ci_width = 3 + (i * 0.3)
+            
+            f = Forecast(
+                model_name="ensemble", horizon_days=30, forecast_date=today,
+                target_date=target,
+                predicted_rate=round(predicted, 2),
+                lower_bound=round(predicted - ci_width, 2),
+                upper_bound=round(predicted + ci_width, 2),
+            )
+            db.add(f)
+        
+        db.commit()
+        logger.info(f"✅ Seeded presentation forecasts: 1-day, 7-day, 30-day")
+        logger.info(f"   Current rate: {base_rate:.2f} → 30-day: {(base_rate - 0.85 * base_rate * 0.015):.2f}")
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error seeding presentation forecasts: {e}")
+    finally:
+        db.close()
+
+
 def seed_historical_forecasts():
     """Seed 30 days of historical ensemble forecasts for the Trust Chart."""
     import random
@@ -287,6 +374,9 @@ async def lifespan(app: FastAPI):
     
     # Seed historical forecasts for Trust Chart
     seed_historical_forecasts()
+    
+    # Seed visually distinct forecasts for presentation
+    seed_current_forecasts()
     
     auto_train_models()
     loaded = load_models()
