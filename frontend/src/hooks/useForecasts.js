@@ -19,6 +19,24 @@ const normaliseModelForecast = (data) => {
   };
 };
 
+// NEW: Fetch historical forecasts for Trust Chart
+const fetchHistoricalForecasts = async () => {
+  try {
+    const endDate = new Date().toISOString().slice(0, 10);
+    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString().slice(0, 10);
+    
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://kwachacast-api.onrender.com/api/v1';
+    const url = `${API_BASE}/forecasts/historical?start_date=${startDate}&end_date=${endDate}&model=ensemble&horizon=7`;
+    
+    const res = await fetch(url);
+    const data = await res.json();
+    return data;
+  } catch {
+    return { forecast_dates: {} };
+  }
+};
+
 export function useDashboardData(horizon = 7) {
   const [latestRate, setLatestRate] = useState(null);
   const [forecasts, setForecasts] = useState(null);
@@ -34,14 +52,13 @@ export function useDashboardData(horizon = 7) {
   const [loadedModelNames, setLoadedModelNames] = useState([]);
   const [generationStatus, setGenerationStatus] = useState("idle");
   const [generationProgress, setGenerationProgress] = useState(0);
+  const [historicalForecasts, setHistoricalForecasts] = useState(null); // NEW
 
-  // Refs to prevent stale closures and race conditions
   const isStaleRef = useRef(false);
   const pollingRef = useRef(null);
   const isMountedRef = useRef(true);
   const abortControllerRef = useRef(null);
 
-  // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;
     return () => {
@@ -62,12 +79,10 @@ export function useDashboardData(horizon = 7) {
     let ensembleData = null;
 
     if (forecastAllData && typeof forecastAllData === "object") {
-      // Handle case where backend returns { status: "generating", ... }
       if (forecastAllData.status === "generating") {
         return { ensembleData: null, modelsList: [], noForecasts: true, isGenerating: true };
       }
 
-      // Handle nested models object
       const modelsObj = forecastAllData.models || forecastAllData;
       
       if (Object.keys(modelsObj).length > 0) {
@@ -92,7 +107,6 @@ export function useDashboardData(horizon = 7) {
           }
         });
 
-        // Fallback: if no ensemble, use first model
         if (!ensembleData && modelsList.length > 0) {
           const fb = modelsList[0];
           ensembleData = {
@@ -114,7 +128,6 @@ export function useDashboardData(horizon = 7) {
   }, []);
 
   const fetchAll = useCallback(async (skipGenerationCheck = false) => {
-    // Cancel any pending requests
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -123,7 +136,6 @@ export function useDashboardData(horizon = 7) {
     try {
       setLoading(true);
 
-      // Step 1: Always check status first (fast, lightweight)
       const statusData = await getForecasts.getStatus(horizon);
       
       if (!isMountedRef.current) return;
@@ -131,12 +143,10 @@ export function useDashboardData(horizon = 7) {
       const loadedNames = statusData?.loaded_models ?? [];
       setLoadedModelNames(loadedNames);
 
-      // Step 2: Handle different states
       if (statusData?.status === "generating") {
         setGenerationStatus("generating");
         setGenerationProgress(statusData.generation_elapsed_seconds || 0);
         
-        // Poll every 2 seconds until generation completes
         if (pollingRef.current) clearTimeout(pollingRef.current);
         pollingRef.current = setTimeout(() => {
           if (isMountedRef.current) {
@@ -148,7 +158,6 @@ export function useDashboardData(horizon = 7) {
         return;
       }
 
-      // Step 3: If not fresh and no generation in progress, trigger generation
       if (!statusData?.is_fresh && !skipGenerationCheck) {
         setGenerationStatus("starting_generation");
         
@@ -156,7 +165,6 @@ export function useDashboardData(horizon = 7) {
           const genResponse = await getForecasts.generate(horizon);
           
           if (genResponse?.status === "already_generating") {
-            // Another client is generating, start polling
             setGenerationStatus("generating");
             if (pollingRef.current) clearTimeout(pollingRef.current);
             pollingRef.current = setTimeout(() => {
@@ -165,10 +173,8 @@ export function useDashboardData(horizon = 7) {
             setLoading(false);
             return;
           } else if (genResponse?.status === "already_fresh") {
-            // Already fresh, proceed to fetch data
             setGenerationStatus("ready");
           } else if (genResponse?.status === "generating") {
-            // Generation started, poll for completion
             setGenerationStatus("generating");
             if (pollingRef.current) clearTimeout(pollingRef.current);
             pollingRef.current = setTimeout(() => {
@@ -179,19 +185,16 @@ export function useDashboardData(horizon = 7) {
           }
         } catch (err) {
           console.error("Failed to trigger generation:", err);
-          // Continue anyway - might have stale data to show
         }
       } else {
         setGenerationStatus("ready");
       }
 
-      // Clear polling if we're proceeding to fetch
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
         pollingRef.current = null;
       }
 
-      // Step 4: Fetch all data in parallel (but only if ready)
       const endDate = new Date().toISOString().slice(0, 10);
       const startDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
         .toISOString().slice(0, 10);
@@ -202,49 +205,33 @@ export function useDashboardData(horizon = 7) {
         historyData,
         metricsData,
         forecast30dData,
+        historicalData, // NEW
       ] = await Promise.all([
-        getLatestRate().catch(err => {
-          console.warn("Failed to fetch latest rate:", err);
-          return null;
-        }),
-        fetchForecasts().catch(err => {
-          console.warn("Failed to fetch forecasts:", err);
-          return {};
-        }),
-        getHistory(startDate, endDate).catch(err => {
-          console.warn("Failed to fetch history:", err);
-          return [];
-        }),
-        getModelMetrics().catch(err => {
-          console.warn("Failed to fetch metrics:", err);
-          return [];
-        }),
-        getForecasts.getLatest(30).catch(err => {
-          console.warn("Failed to fetch 30d forecast:", err);
-          return null;
-        }),
+        getLatestRate().catch(() => null),
+        fetchForecasts().catch(() => ({})),
+        getHistory(startDate, endDate).catch(() => []),
+        getModelMetrics().catch(() => []),
+        getForecasts.getLatest(30).catch(() => null),
+        fetchHistoricalForecasts().catch(() => ({ forecast_dates: {} })), // NEW
       ]);
 
       if (!isMountedRef.current) return;
 
-      // Process results
       setLatestRate(latestRateData);
       setAnomalies([]);
       setForecast30d(forecast30dData);
+      setHistoricalForecasts(historicalData); // NEW
 
-      // Filter metrics to only loaded models
       const filteredMetrics = Array.isArray(metricsData) 
         ? metricsData.filter(m => loadedNames.length === 0 || loadedNames.includes(m.model_name))
         : [];
       setMetrics(filteredMetrics);
 
-      // Stale check
       const isFresh = statusData?.is_fresh ?? false;
       setIsStale(!isFresh);
       isStaleRef.current = !isFresh;
       setForecastDate(statusData?.forecast_date ?? null);
 
-      // Process forecast data
       const { ensembleData, modelsList, noForecasts } = processForecastData(
         forecastAllData,
         loadedNames,
@@ -255,7 +242,6 @@ export function useDashboardData(horizon = 7) {
       setAllForecasts(modelsList);
       setNoForecasts(noForecasts);
 
-      // Process history data
       let historyArray = [];
       if (Array.isArray(historyData)) {
         historyArray = historyData;
@@ -277,13 +263,10 @@ export function useDashboardData(horizon = 7) {
     }
   }, [horizon, processForecastData]);
 
-  // Initial fetch on mount or horizon change
   useEffect(() => {
     if (isMountedRef.current) {
       fetchAll();
     }
-    
-    // Cleanup polling on dependency change
     return () => {
       if (pollingRef.current) {
         clearTimeout(pollingRef.current);
@@ -292,7 +275,6 @@ export function useDashboardData(horizon = 7) {
     };
   }, [fetchAll]);
 
-  // Manual generation trigger
   const generateForecasts = useCallback(async (h) => {
     try {
       setGenerationStatus("starting_generation");
@@ -300,13 +282,11 @@ export function useDashboardData(horizon = 7) {
       
       if (response?.status === "generating" || response?.status === "already_generating") {
         setGenerationStatus("generating");
-        // Start polling
         if (pollingRef.current) clearTimeout(pollingRef.current);
         pollingRef.current = setTimeout(() => {
           if (isMountedRef.current) fetchAll(true);
         }, 2000);
       } else if (response?.status === "already_fresh") {
-        // Just fetch the data
         await fetchAll(true);
       }
     } catch (err) {
@@ -331,6 +311,7 @@ export function useDashboardData(horizon = 7) {
     loadedModelNames,
     generationStatus,
     generationProgress,
+    historicalForecasts, // NEW
     refetch: fetchAll,
     generateForecasts,
   };

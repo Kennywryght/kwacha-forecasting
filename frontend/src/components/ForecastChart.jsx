@@ -18,8 +18,8 @@ export default function ForecastChart({
 }) {
   if (!forecasts?.dates || !forecasts?.prediction) {
     return (
-      <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-5">
-        <p className="text-slate-400">
+      <div className="bg-stone-900/60 rounded-2xl border border-stone-700/60 backdrop-blur p-5">
+        <p className="text-stone-400">
           No forecast data yet. Generate a forecast.
         </p>
       </div>
@@ -48,19 +48,19 @@ export default function ForecastChart({
   const data = [...historical, ...future]
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl border border-slate-700/60 backdrop-blur p-6">
+    <div className="bg-stone-900/60 rounded-2xl border border-stone-700/60 backdrop-blur p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="text-lg font-semibold text-white">
+          <h3 className="text-lg font-semibold text-stone-100">
             Exchange Rate Forecast
           </h3>
 
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-stone-400 mt-1">
             Historical vs Predicted MWK/USD Exchange Rates
           </p>
         </div>
 
-        <div className="text-sm text-slate-400">
+        <div className="text-sm text-stone-400">
           {horizon}-Day Forecast
         </div>
       </div>
@@ -72,25 +72,25 @@ export default function ForecastChart({
         >
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="#334155"
+            stroke="#2A332D"
           />
 
           <XAxis
             dataKey="date"
-            tick={{ fill: '#94a3b8', fontSize: 12 }}
+            tick={{ fill: '#8A968D', fontSize: 12 }}
           />
 
           <YAxis
-            tick={{ fill: '#94a3b8', fontSize: 12 }}
+            tick={{ fill: '#8A968D', fontSize: 12 }}
             domain={['auto', 'auto']}
           />
 
           <Tooltip
             contentStyle={{
-              backgroundColor: '#1e293b',
-              border: '1px solid #475569',
+              backgroundColor: '#1A211D',
+              border: '1px solid #3D4A41',
               borderRadius: '10px',
-              color: '#e2e8f0',
+              color: '#D2D8D2',
             }}
           />
 
@@ -105,7 +105,7 @@ export default function ForecastChart({
           <Line
             type="monotone"
             dataKey="actual"
-            stroke="#3b82f6"
+            stroke="#E0AC4F"
             strokeWidth={3}
             dot={false}
             name="Actual"
@@ -115,7 +115,7 @@ export default function ForecastChart({
           <Line
             type="monotone"
             dataKey="forecast"
-            stroke="#ef4444"
+            stroke="#D2693C"
             strokeWidth={3}
             strokeDasharray="6 6"
             dot={false}
@@ -149,7 +149,7 @@ export default function ForecastChart({
 
           <ReferenceLine
             y={0}
-            stroke="#475569"
+            stroke="#3D4A41"
             strokeDasharray="3 3"
           />
         </LineChart>

@@ -3,7 +3,54 @@
 @tailwind utilities;
 
 body {
-  background-color: #0f172a;
-  color: #e2e8f0;
+  background-color: #0B0F0D;
+  color: #DCE3DE;
   font-family: 'Inter', sans-serif;
+}
+
+h1, h2, h3, .font-display {
+  font-family: 'Fraunces', ui-serif, Georgia, serif;
+}
+
+.font-data {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+}
+
+/* Signature element: the "rate wave" — an abstracted forecast line,
+   used as a quiet recurring motif across hero sections and dividers. */
+.rate-wave-divider {
+  position: relative;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #2A332D 15%, #2A332D 85%, transparent);
+}
+
+.rate-wave-divider::before {
+  content: "";
+  position: absolute;
+  inset: -1px 0 auto 0;
+  height: 2px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='8' viewBox='0 0 240 8'%3E%3Cpath d='M0 4 C 20 0, 40 8, 60 4 S 100 0, 120 4 S 160 8, 180 4 S 220 0, 240 4' fill='none' stroke='%23E0AC4F' stroke-width='1' opacity='0.45'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-size: 120px 8px;
+}
+
+/* ── Forecast Chart Error Bars ─────────────────────────────────────────────── */
+
+/* Bounds labels hidden by default, shown on hover */
+.error-bar-group .bounds-label {
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+/* Show bounds labels when hovering over a forecast dot */
+.error-bar-group:hover .bounds-label {
+  opacity: 1 !important;
+}
+
+/* Dot grows slightly and brightens on hover */
+.error-bar-group:hover circle:last-of-type {
+  r: 6;
+  filter: brightness(1.3);
+  transition: r 0.15s ease;
 }

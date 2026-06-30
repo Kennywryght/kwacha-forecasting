@@ -244,7 +244,15 @@ def _run_generate(horizon: int):
                 lowers = adjusted["lower_bound"] or [None] * len(adjusted["dates"])
                 uppers = adjusted["upper_bound"] or [None] * len(adjusted["dates"])
 
-                crud.delete_forecasts(db, model_name, horizon, today)
+                # FIX: Only delete if today's forecasts already exist (keep historical forecasts)
+                existing_today = db.query(Forecast).filter(
+                    Forecast.model_name == model_name,
+                    Forecast.horizon_days == horizon,
+                    Forecast.forecast_date == today
+                ).first()
+                if existing_today:
+                    crud.delete_forecasts(db, model_name, horizon, today)
+
                 objects = [
                     Forecast(model_name=model_name, horizon_days=horizon, forecast_date=today,
                              target_date=d, predicted_rate=p, lower_bound=lo, upper_bound=hi)
@@ -295,7 +303,14 @@ def _run_generate(horizon: int):
                             ))
 
                     if ensemble_objects:
-                        crud.delete_forecasts(db, "ensemble", horizon, today)
+                        # FIX: Only delete if today's ensemble forecasts already exist
+                        existing_ensemble = db.query(Forecast).filter(
+                            Forecast.model_name == "ensemble",
+                            Forecast.horizon_days == horizon,
+                            Forecast.forecast_date == today
+                        ).first()
+                        if existing_ensemble:
+                            crud.delete_forecasts(db, "ensemble", horizon, today)
                         crud.save_forecasts_bulk(db, ensemble_objects)
                         logger.info(f"  ✅ ensemble: saved {len(ensemble_objects)} points")
             except Exception as e:
@@ -641,3 +656,48 @@ def export_forecasts(horizon: int = Query(default=7), format: str = Query(defaul
                        headers={"Content-Disposition": f"attachment; filename=kwachacast_forecast_{horizon}d.csv"})
 
     return {"model": "ensemble", "horizon": horizon, "forecasts": data}
+
+@router.get("/historical")
+def get_historical_forecasts(
+    start_date: str = Query(default=None),
+    end_date: str = Query(default=None),
+    model: str = Query(default="ensemble"),
+    horizon: int = Query(default=7),
+    db: Session = Depends(get_db)
+):
+    """Get historical forecasts for a date range (for Trust Chart)."""
+    try:
+        query = db.query(Forecast).filter(
+            Forecast.model_name == model,
+            Forecast.horizon_days == horizon
+        )
+        
+        if start_date:
+            query = query.filter(Forecast.forecast_date >= date.fromisoformat(start_date))
+        if end_date:
+            query = query.filter(Forecast.forecast_date <= date.fromisoformat(end_date))
+        
+        records = query.order_by(Forecast.forecast_date.asc(), Forecast.target_date.asc()).all()
+        
+        if not records:
+            return {"message": "No historical forecasts found for this range.", "forecast_dates": {}}
+        
+        # Group by forecast_date
+        from collections import defaultdict
+        grouped = defaultdict(list)
+        for r in records:
+            grouped[str(r.forecast_date)].append({
+                "target_date": str(r.target_date),
+                "predicted_rate": r.predicted_rate,
+                "lower_bound": r.lower_bound,
+                "upper_bound": r.upper_bound,
+            })
+        
+        return {
+            "model": model,
+            "horizon": horizon,
+            "forecast_dates": {k: v for k, v in sorted(grouped.items())},
+            "total_forecast_days": len(grouped)
+        }
+    except Exception as e:
+        return {"message": str(e), "forecast_dates": {}}

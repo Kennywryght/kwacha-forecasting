@@ -19,30 +19,30 @@ export default function ModelMetricsTable({
   const bestModel = sortedMetrics[0];
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60 backdrop-blur h-full">
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60 backdrop-blur h-full">
 
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-stone-100">
             {lang === "ny"
               ? "Kuyerekeza kwa Model"
               : "Model Performance"}
           </h2>
 
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-stone-400 mt-1">
             Comparison of forecasting model accuracy
           </p>
         </div>
 
         {bestModel && (
-          <div className="bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 rounded-full text-xs text-emerald-300">
+          <div className="bg-gold-500/20 border border-gold-500/30 px-3 py-1 rounded-full text-xs text-gold-300">
             Best: {bestModel.model_name || bestModel.name}
           </div>
         )}
       </div>
 
       {sortedMetrics.length === 0 ? (
-        <div className="text-center text-slate-400 mt-10">
+        <div className="text-center text-stone-400 mt-10">
           <p className="text-sm">
             {lang === "ny"
               ? "Palibe zotsatira za model."
@@ -54,12 +54,12 @@ export default function ModelMetricsTable({
           <table className="min-w-full text-sm text-left">
 
             <thead>
-              <tr className="border-b border-slate-600 bg-slate-700/30">
+              <tr className="border-b border-stone-600 bg-stone-700/30">
 
                 {headers.map((header) => (
                   <th
                     key={header}
-                    className="px-4 py-3 font-semibold text-slate-300"
+                    className="px-4 py-3 font-semibold text-stone-300"
                   >
                     {header}
                   </th>
@@ -68,7 +68,7 @@ export default function ModelMetricsTable({
               </tr>
             </thead>
 
-            <tbody className="text-slate-300">
+            <tbody className="text-stone-300">
 
               {sortedMetrics.map((model, idx) => {
 
@@ -79,15 +79,15 @@ export default function ModelMetricsTable({
                 return (
                   <tr
                     key={idx}
-                    className={`transition-colors hover:bg-slate-700/30 ${
+                    className={`transition-colors hover:bg-stone-700/30 ${
                       isBest
-                        ? "bg-emerald-500/10 border-l-4 border-emerald-400"
+                        ? "bg-gold-500/10 border-l-4 border-gold-400"
                         : ""
                     }`}
                   >
 
                     {/* MODEL NAME */}
-                    <td className="px-4 py-3 font-medium text-white">
+                    <td className="px-4 py-3 font-medium text-stone-100">
                       {model.model_name || model.name || idx}
                     </td>
 
@@ -109,11 +109,11 @@ export default function ModelMetricsTable({
                     {/* STATUS */}
                     <td className="px-4 py-3">
                       {isBest ? (
-                        <span className="bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded-full text-xs">
+                        <span className="bg-gold-500/20 text-gold-300 px-2 py-1 rounded-full text-xs">
                           Best Model
                         </span>
                       ) : (
-                        <span className="text-slate-400 text-xs">
+                        <span className="text-stone-400 text-xs">
                           Compared
                         </span>
                       )}

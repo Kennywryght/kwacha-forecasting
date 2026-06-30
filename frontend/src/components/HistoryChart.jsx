@@ -16,7 +16,7 @@ export default function HistoryChart({ history, loading, forecasts }) {
 
   if (loading) {
     return (
-      <div className="text-center text-slate-400 py-10">
+      <div className="text-center text-stone-400 py-10">
         <p>Loading history...</p>
       </div>
     )
@@ -25,7 +25,7 @@ export default function HistoryChart({ history, loading, forecasts }) {
   // Ensure history is a valid array with at least one point
   if (!Array.isArray(history) || history.length === 0) {
     return (
-      <div className="text-center text-slate-400 py-10">
+      <div className="text-center text-stone-400 py-10">
         <p>No historical data available</p>
       </div>
     )
@@ -40,7 +40,7 @@ export default function HistoryChart({ history, loading, forecasts }) {
   // If after mapping we still have invalid data, show a message
   if (chartData.every(d => d.date == null || d.rate == null)) {
     return (
-      <div className="text-center text-slate-400 py-10">
+      <div className="text-center text-stone-400 py-10">
         <p>Historical data format is not recognised</p>
       </div>
     )
@@ -59,14 +59,14 @@ export default function HistoryChart({ history, loading, forecasts }) {
       >
         <defs>
           <linearGradient id="rateGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#60a5fa" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0} />
+            <stop offset="0%" stopColor="#E0AC4F" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#E0AC4F" stopOpacity={0} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+        <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
         <XAxis
           dataKey="date"
-          tick={{ fill: '#94a3b8', fontSize: 12 }}
+          tick={{ fill: '#8A968D', fontSize: 12 }}
           tickFormatter={(val) => {
             if (!val) return ''
             const d = new Date(val)
@@ -74,21 +74,21 @@ export default function HistoryChart({ history, loading, forecasts }) {
           }}
         />
         <YAxis
-          tick={{ fill: '#94a3b8', fontSize: 12 }}
+          tick={{ fill: '#8A968D', fontSize: 12 }}
           domain={['auto', 'auto']}
         />
         <Tooltip
           contentStyle={{
-            backgroundColor: '#1e293b',
+            backgroundColor: '#1A211D',
             border: 'none',
             borderRadius: '8px',
-            color: '#e2e8f0',
+            color: '#D2D8D2',
           }}
         />
         <Area
           type="monotone"
           dataKey="rate"
-          stroke="#60a5fa"
+          stroke="#E0AC4F"
           strokeWidth={2}
           fill="url(#rateGrad)"
           name="Historical Rate"
@@ -97,7 +97,7 @@ export default function HistoryChart({ history, loading, forecasts }) {
           <Line
             type="monotone"
             dataKey="forecast"
-            stroke="#fbbf24"
+            stroke="#6FAE82"
             strokeWidth={2}
             strokeDasharray="5 5"
             dot={false}

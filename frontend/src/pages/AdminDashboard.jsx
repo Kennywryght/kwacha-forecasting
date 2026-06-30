@@ -5,9 +5,9 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 function StatusBadge({ status }) {
   const colors = {
-    success: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    success: "bg-gold-500/20 text-gold-400 border-gold-500/30",
     warning: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    error: "bg-red-500/20 text-red-400 border-red-500/30",
+    error: "bg-terracotta-500/20 text-terracotta-400 border-terracotta-500/30",
     info: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   };
   return <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${colors[status] || colors.info}`}>{status}</span>;
@@ -15,13 +15,13 @@ function StatusBadge({ status }) {
 
 function StatCard({ icon: Icon, title, value, subtitle, color }) {
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
       <div className="flex items-start justify-between mb-3">
-        <p className="text-slate-400 text-xs uppercase tracking-wider">{title}</p>
+        <p className="text-stone-400 text-xs uppercase tracking-wider">{title}</p>
         <Icon className={`w-5 h-5 ${color}`} />
       </div>
-      <p className="text-2xl font-bold text-white">{value}</p>
-      {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+      <p className="font-data text-2xl font-semibold text-stone-100">{value}</p>
+      {subtitle && <p className="text-xs text-stone-500 mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -35,28 +35,28 @@ function ModelMetricsTable({ metrics }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-slate-700">
-            <th className="text-left py-3 px-4 font-semibold text-slate-300">Model</th>
-            <th className="text-right py-3 px-4 font-semibold text-slate-300">MAPE (%)</th>
-            <th className="text-right py-3 px-4 font-semibold text-slate-300">RMSE</th>
-            <th className="text-right py-3 px-4 font-semibold text-slate-300">MAE</th>
-            <th className="text-right py-3 px-4 font-semibold text-slate-300">Dir Acc</th>
-            <th className="text-center py-3 px-4 font-semibold text-slate-300">Status</th>
+          <tr className="border-b border-stone-700">
+            <th className="text-left py-3 px-4 font-semibold text-stone-300">Model</th>
+            <th className="text-right py-3 px-4 font-semibold text-stone-300">MAPE (%)</th>
+            <th className="text-right py-3 px-4 font-semibold text-stone-300">RMSE</th>
+            <th className="text-right py-3 px-4 font-semibold text-stone-300">MAE</th>
+            <th className="text-right py-3 px-4 font-semibold text-stone-300">Dir Acc</th>
+            <th className="text-center py-3 px-4 font-semibold text-stone-300">Status</th>
           </tr>
         </thead>
         <tbody>
           {metrics.map((m, i) => (
-            <tr key={i} className={`border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors ${m.model_name === bestModel?.model_name ? 'bg-emerald-900/20' : ''}`}>
-              <td className="py-3 px-4 font-medium text-white uppercase">
+            <tr key={i} className={`border-b border-stone-700/50 hover:bg-stone-700/30 transition-colors ${m.model_name === bestModel?.model_name ? 'bg-gold-500/10' : ''}`}>
+              <td className="py-3 px-4 font-medium text-stone-100 uppercase">
                 {m.model_name}
                 {m.model_name === bestModel?.model_name && (
-                  <span className="ml-2 text-xs text-emerald-400 font-normal">★ Best</span>
+                  <span className="ml-2 text-xs text-gold-400 font-normal">★ Best</span>
                 )}
               </td>
-              <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.mape?.toFixed(4)}</td>
-              <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.rmse?.toFixed(2)}</td>
-              <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.mae?.toFixed(2)}</td>
-              <td className="text-right py-3 px-4 text-slate-300 font-mono">
+              <td className="text-right py-3 px-4 text-stone-300 font-mono">{m.mape?.toFixed(4)}</td>
+              <td className="text-right py-3 px-4 text-stone-300 font-mono">{m.rmse?.toFixed(2)}</td>
+              <td className="text-right py-3 px-4 text-stone-300 font-mono">{m.mae?.toFixed(2)}</td>
+              <td className="text-right py-3 px-4 text-stone-300 font-mono">
                 {m.directional_accuracy != null ? `${(m.directional_accuracy * 100).toFixed(1)}%` : '—'}
               </td>
               <td className="text-center py-3 px-4">
@@ -95,9 +95,9 @@ function ForecastPreview() {
 
   if (loading) {
     return (
-      <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+          <Loader2 className="w-5 h-5 text-gold-400 animate-spin" />
         </div>
       </div>
     );
@@ -110,29 +110,29 @@ function ForecastPreview() {
   const targetDates = firstModel?.forecasts?.map(f => f.target_date) || [];
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
         <Eye className="w-4 h-4 text-blue-400" />
         Latest 7-Day Forecast Comparison
       </h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-slate-700">
-              <th className="text-left py-2 px-3 text-slate-400 text-xs">Date</th>
+            <tr className="border-b border-stone-700">
+              <th className="text-left py-2 px-3 text-stone-400 text-xs">Date</th>
               {modelNames.map(name => (
-                <th key={name} className="text-right py-2 px-3 text-slate-400 text-xs uppercase">{name}</th>
+                <th key={name} className="text-right py-2 px-3 text-stone-400 text-xs uppercase">{name}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {targetDates.map((date, i) => (
-              <tr key={date} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition-colors">
-                <td className="py-2 px-3 text-white text-xs">{date}</td>
+              <tr key={date} className="border-b border-stone-700/50 hover:bg-stone-700/30 transition-colors">
+                <td className="py-2 px-3 text-stone-100 text-xs">{date}</td>
                 {modelNames.map(name => {
                   const forecast = preview[name]?.forecasts?.[i];
                   return (
-                    <td key={name} className="text-right py-2 px-3 text-slate-300 font-mono text-xs">
+                    <td key={name} className="text-right py-2 px-3 text-stone-300 font-mono text-xs">
                       {forecast ? forecast.predicted_rate?.toFixed(2) : '—'}
                     </td>
                   );
@@ -142,7 +142,7 @@ function ForecastPreview() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-slate-500 mt-3">
+      <p className="text-xs text-stone-500 mt-3">
         Forecast date: {firstModel?.forecast_date || 'Unknown'} • 
         Comparing {modelNames.length} models
       </p>
@@ -193,9 +193,9 @@ function ModelForecastChart() {
 
   if (loading) {
     return (
-      <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+          <Loader2 className="w-5 h-5 text-gold-400 animate-spin" />
         </div>
       </div>
     );
@@ -204,25 +204,25 @@ function ModelForecastChart() {
   if (!chartData?.series?.length) return null;
 
   const modelColors = {
-    arima: '#34d399',
-    arimax: '#60a5fa',
-    prophet: '#fbbf24',
-    xgboost: '#f472b6',
-    lightgbm: '#a78bfa',
-    ensemble: '#ffffff',
+    arima: '#6FAE82',
+    arimax: '#7DA0C4',
+    prophet: '#E0AC4F',
+    xgboost: '#D2693C',
+    lightgbm: '#B796D6',
+    ensemble: '#EAEDE9',
   };
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-          <TrendingUp className="w-4 h-4 text-emerald-400" />
+        <h3 className="text-sm font-semibold text-stone-300 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-gold-400" />
           Model Forecast Comparison Chart
         </h3>
         <select
           value={selectedHorizon}
           onChange={(e) => setSelectedHorizon(Number(e.target.value))}
-          className="bg-slate-700 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500"
+          className="bg-stone-700 border border-stone-600 text-stone-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-gold-500"
         >
           <option value={1}>1 Day</option>
           <option value={7}>7 Days</option>
@@ -231,11 +231,11 @@ function ModelForecastChart() {
       </div>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData.series}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
+          <XAxis dataKey="date" tick={{ fill: '#8A968D', fontSize: 10 }} />
+          <YAxis tick={{ fill: '#8A968D', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip 
-            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }}
+            contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }}
             formatter={(v) => v != null ? [`MWK ${Number(v).toFixed(2)}`, undefined] : ['N/A', undefined]} 
           />
           <Legend />
@@ -244,7 +244,7 @@ function ModelForecastChart() {
               key={model}
               type="monotone"
               dataKey={model}
-              stroke={modelColors[model] || '#94a3b8'}
+              stroke={modelColors[model] || '#8A968D'}
               strokeWidth={2}
               dot={{ r: 2 }}
               name={model.toUpperCase()}
@@ -253,7 +253,7 @@ function ModelForecastChart() {
           ))}
         </LineChart>
       </ResponsiveContainer>
-      <p className="text-xs text-slate-500 mt-3">
+      <p className="text-xs text-stone-500 mt-3">
         Comparing {chartData.models.length} models • Horizon: {selectedHorizon} day{selectedHorizon > 1 ? 's' : ''}
       </p>
     </div>
@@ -265,41 +265,41 @@ function DataFreshness({ stats, accuracy, metrics }) {
   const activeModels = metrics?.length || 0;
   
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
         <Server className="w-4 h-4 text-purple-400" />
         System Status
       </h3>
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-sm">Active models</span>
-          <span className="text-white text-sm font-medium">{activeModels} loaded</span>
+          <span className="text-stone-400 text-sm">Active models</span>
+          <span className="text-stone-100 text-sm font-medium">{activeModels} loaded</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-sm">Latest rate</span>
-          <span className="text-white text-sm font-mono">
+          <span className="text-stone-400 text-sm">Latest rate</span>
+          <span className="text-stone-100 text-sm font-mono">
             {stats?.current ? `MWK ${stats.current.toFixed(2)}` : 'Unknown'}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-sm">7-day change</span>
-          <span className={`text-sm font-medium ${stats?.change_7d > 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+          <span className="text-stone-400 text-sm">7-day change</span>
+          <span className={`text-sm font-medium ${stats?.change_7d > 0 ? 'text-terracotta-400' : 'text-gold-400'}`}>
             {stats ? `${stats.change_7d > 0 ? '+' : ''}${stats.change_7d?.toFixed(2)} (${stats.change_pct_7d?.toFixed(2)}%)` : 'Unknown'}
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-sm">Accuracy data points</span>
-          <span className="text-white text-sm">{accuracy?.comparisons?.length || 0}</span>
+          <span className="text-stone-400 text-sm">Accuracy data points</span>
+          <span className="text-stone-100 text-sm">{accuracy?.comparisons?.length || 0}</span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-sm">Forecasts within range</span>
-          <span className="text-emerald-400 text-sm font-medium">
+          <span className="text-stone-400 text-sm">Forecasts within range</span>
+          <span className="text-gold-400 text-sm font-medium">
             {accuracy?.within_range_pct ? `${accuracy.within_range_pct}%` : 'N/A'}
           </span>
         </div>
-        <hr className="border-slate-700" />
+        <hr className="border-stone-700" />
         <div className="flex items-center justify-between">
-          <span className="text-slate-400 text-sm">API documentation</span>
+          <span className="text-stone-400 text-sm">API documentation</span>
           <a 
             href="https://kwachacast-api.onrender.com/docs" 
             target="_blank" 
@@ -321,9 +321,9 @@ function AccuracyTracking({ accuracy, metrics }) {
     : null;
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-        <Shield className="w-4 h-4 text-emerald-400" />
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
+        <Shield className="w-4 h-4 text-gold-400" />
         Forecast Accuracy
       </h3>
       
@@ -336,9 +336,9 @@ function AccuracyTracking({ accuracy, metrics }) {
               { label: "Within Range", value: `${accuracy.within_range_pct}%` },
               { label: "Data Points", value: accuracy.comparisons.length },
             ].map((item, i) => (
-              <div key={i} className="bg-slate-700/40 rounded-xl p-3 text-center">
-                <p className="text-slate-400 text-xs">{item.label}</p>
-                <p className={`text-lg font-bold ${i === 2 ? 'text-emerald-400' : 'text-white'}`}>
+              <div key={i} className="bg-stone-700/40 rounded-xl p-3 text-center">
+                <p className="text-stone-400 text-xs">{item.label}</p>
+                <p className={`text-lg font-bold ${i === 2 ? 'text-gold-400' : 'text-stone-100'}`}>
                   {item.value}
                 </p>
               </div>
@@ -346,13 +346,13 @@ function AccuracyTracking({ accuracy, metrics }) {
           </div>
         </>
       ) : (
-        <div className="bg-slate-700/40 rounded-xl p-4">
-          <p className="text-slate-400 text-sm">
+        <div className="bg-stone-700/40 rounded-xl p-4">
+          <p className="text-stone-400 text-sm">
             No historical accuracy data yet. Requires 7+ days of consecutive forecast generation to compare predictions against actual rates.
           </p>
           {bestModel && (
-            <p className="text-slate-500 text-xs mt-2">
-              Training accuracy: <span className="text-emerald-400 font-medium">{bestModel.model_name?.toUpperCase()}</span> achieves {bestModel.mape?.toFixed(4)}% MAPE
+            <p className="text-stone-500 text-xs mt-2">
+              Training accuracy: <span className="text-gold-400 font-medium">{bestModel.model_name?.toUpperCase()}</span> achieves {bestModel.mape?.toFixed(4)}% MAPE
             </p>
           )}
         </div>
@@ -368,15 +368,15 @@ function ActivityLog({ activities }) {
   return (
     <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
       {activities.map((a, i) => (
-        <div key={i} className="flex items-start gap-3 p-2.5 bg-slate-700/30 rounded-lg">
+        <div key={i} className="flex items-start gap-3 p-2.5 bg-stone-700/30 rounded-lg">
           <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-            a.type === 'success' ? 'bg-emerald-400' : 
-            a.type === 'error' ? 'bg-red-400' : 
+            a.type === 'success' ? 'bg-gold-400' : 
+            a.type === 'error' ? 'bg-terracotta-400' : 
             'bg-blue-400'
           }`} />
           <div className="min-w-0">
-            <p className="text-xs text-slate-300">{a.message}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{a.time}</p>
+            <p className="text-xs text-stone-300">{a.message}</p>
+            <p className="text-xs text-stone-500 mt-0.5">{a.time}</p>
           </div>
         </div>
       ))}
@@ -482,29 +482,30 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
-          <p className="text-slate-400 text-sm mt-1">Monitor and manage the KwachaCast forecasting system</p>
+          <h1 className="font-display text-2xl font-semibold text-stone-100">Admin Dashboard</h1>
+          <p className="text-stone-400 text-sm mt-1">Monitor and manage the KwachaCast forecasting system</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500">Auto-refresh: 5 min</span>
+          <span className="text-xs text-stone-500">Auto-refresh: 5 min</span>
           <button 
             onClick={fetchAll} 
             disabled={loading} 
-            className="text-slate-400 hover:text-white text-sm flex items-center gap-1 transition"
+            className="text-stone-400 hover:text-stone-100 text-sm flex items-center gap-1 transition"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
         </div>
       </div>
+      <div className="rate-wave-divider" />
 
       {/* Status Message */}
       {msg && (
         <div className={`rounded-xl p-3 text-sm font-medium ${
           msg.includes('✅') 
-            ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' 
+            ? 'bg-gold-500/10 border border-gold-500/20 text-gold-400' 
             : msg.includes('❌') 
-            ? 'bg-red-500/10 border border-red-500/20 text-red-400' 
+            ? 'bg-terracotta-500/10 border border-terracotta-500/20 text-terracotta-400' 
             : 'bg-blue-500/10 border border-blue-500/20 text-blue-400'
         }`}>
           {msg}
@@ -512,8 +513,8 @@ export default function AdminDashboard() {
       )}
 
       {/* Quick Actions */}
-      <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-        <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+      <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+        <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-400" />
           Quick Actions
         </h3>
@@ -521,7 +522,7 @@ export default function AdminDashboard() {
           <button 
             onClick={handleGenerateAll} 
             disabled={generating} 
-            className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white text-xs px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+            className="bg-gold-400 hover:bg-gold-300 disabled:bg-stone-700 disabled:text-stone-400 text-ink-950 text-xs px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2"
           >
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             {generating ? 'Generating...' : 'Generate All'}
@@ -530,7 +531,7 @@ export default function AdminDashboard() {
             <button 
               key={h}
               onClick={() => handleGenerateSingle(h)} 
-              className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-2 rounded-lg font-medium transition"
+              className="bg-stone-700 hover:bg-stone-600 text-stone-100 text-xs px-3 py-2 rounded-lg font-medium transition"
             >
               {h}-Day
             </button>
@@ -538,7 +539,7 @@ export default function AdminDashboard() {
           <button 
             onClick={handleRetrain} 
             disabled={retraining} 
-            className="bg-amber-600 hover:bg-amber-500 disabled:bg-slate-600 text-white text-xs px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
+            className="bg-amber-600 hover:bg-amber-500 disabled:bg-stone-600 text-stone-100 text-xs px-4 py-2 rounded-lg font-medium transition flex items-center gap-2"
           >
             {retraining ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Activity className="w-3.5 h-3.5" />}
             {retraining ? 'Retraining...' : 'Retrain All'}
@@ -550,8 +551,8 @@ export default function AdminDashboard() {
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard icon={Database} title="Active Models" value={metrics.length} subtitle="Loaded & fitted" color="text-blue-400" />
-          <StatCard icon={TrendingUp} title="Latest Rate" value={stats?.current ? `MWK ${stats.current.toFixed(2)}` : "—"} subtitle="Current MWK/USD" color="text-emerald-400" />
-          <StatCard icon={Shield} title="Best MAPE" value={bestModel ? `${bestModel.mape?.toFixed(4)}%` : "—"} subtitle={bestModel?.model_name?.toUpperCase()} color="text-emerald-400" />
+          <StatCard icon={TrendingUp} title="Latest Rate" value={stats?.current ? `MWK ${stats.current.toFixed(2)}` : "—"} subtitle="Current MWK/USD" color="text-gold-400" />
+          <StatCard icon={Shield} title="Best MAPE" value={bestModel ? `${bestModel.mape?.toFixed(4)}%` : "—"} subtitle={bestModel?.model_name?.toUpperCase()} color="text-gold-400" />
           <StatCard icon={Cpu} title="Accuracy Data" value={accuracy?.comparisons?.length || 0} subtitle="Historical comparisons" color="text-purple-400" />
         </div>
       )}
@@ -559,14 +560,14 @@ export default function AdminDashboard() {
       {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 text-emerald-400 animate-spin" />
+          <Loader2 className="w-8 h-8 text-gold-400 animate-spin" />
         </div>
       )}
 
       {/* Model Performance */}
       {!loading && (
-        <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-          <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+        <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+          <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-blue-400" />
             Model Performance
           </h3>
@@ -590,8 +591,8 @@ export default function AdminDashboard() {
 
       {/* Activity Log */}
       {!loading && (
-        <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-          <h3 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+        <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+          <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
             <Clock className="w-4 h-4 text-purple-400" />
             Activity Log
           </h3>

@@ -4,7 +4,7 @@ import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
 import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, get7DayForecast, get30DayForecast, getRateAlerts } from "../utils/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home, Clock, HelpCircle, Bell, ArrowRight } from "lucide-react";
+import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, ShoppingCart, Home, Clock, HelpCircle, Bell, ArrowRight } from "lucide-react";
 
 const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
 
@@ -15,11 +15,22 @@ const fmtDate = (d) => {
 };
 
 // ── Trust Chart ───────────────────────────────────────────────────────────────
-function TrustChart({ history, forecasts }) {
+function TrustChart({ history, forecasts, historicalForecasts }) {
   if (!history?.length) return null;
   
   const forecastMap = {};
-  if (forecasts?.forecasts) {
+  
+  // First priority: historical forecasts from dedicated endpoint
+  if (historicalForecasts?.forecast_dates) {
+    Object.values(historicalForecasts.forecast_dates).forEach(dayForecasts => {
+      dayForecasts.forEach(f => {
+        const d = String(f.target_date).slice(0, 10);
+        forecastMap[d] = Number(f.predicted_rate?.toFixed(2));
+      });
+    });
+  }
+  // Fallback: current forecasts
+  else if (forecasts?.forecasts) {
     forecasts.forecasts.forEach(f => {
       const d = String(f.target_date).slice(0, 10);
       forecastMap[d] = Number(f.predicted_rate?.toFixed(2));
@@ -39,46 +50,57 @@ function TrustChart({ history, forecasts }) {
   const hasForecasts = data.some(d => d.forecasted != null);
   
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Accuracy & transparency</h3></div>
-      <p className="text-xs text-slate-500 mb-4">{hasForecasts ? "Our forecasts (dotted) vs actual rates." : "Historical rates for the last 30 days."}</p>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-gold-400" /><h3 className="text-sm font-semibold text-stone-300">Accuracy & transparency</h3></div>
+      <p className="text-xs text-stone-500 mb-4">
+        {hasForecasts ? "Our forecasts (dotted) vs actual rates." : "Historical rates for the last 30 days. Past forecasts will appear here as they accumulate."}
+      </p>
       <ResponsiveContainer width="100%" height={220}>
         <LineChart data={data}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
-          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
+          <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
+          <XAxis dataKey="date" tick={{ fill: '#8A968D', fontSize: 10 }} interval={4} angle={-30} textAnchor="end" />
+          <YAxis tick={{ fill: '#8A968D', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }} 
             formatter={(v, name) => { 
               if (v == null) return ['N/A', name];
               const label = name === 'actual' ? 'Actual rate' : name === 'forecasted' ? 'Our forecast' : name;
               return [`MWK ${Number(v).toFixed(2)}`, label];
             }} />
           <Legend />
-          <Line type="monotone" dataKey="actual" stroke="#34d399" strokeWidth={2} dot={false} name="Actual rate" />
-          {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#fbbf24" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} name="Our forecast" connectNulls={false} />}
+          <Line type="monotone" dataKey="actual" stroke="#6FAE82" strokeWidth={2} dot={false} name="Actual rate" />
+          {hasForecasts && <Line type="monotone" dataKey="forecasted" stroke="#E0AC4F" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3 }} name="Our forecast" connectNulls={false} />}
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-// ── Error Bar Dot Renderer ────────────────────────────────────────────────────
-function ErrorBarDot({ cx, cy, payload, color }) {
+// ── Error Bar Dot Renderer (BOUNDS APPEAR ON HOVER) ─────────────────────────
+const ErrorBarDot = ({ cx, cy, payload, color }) => {
   if (!payload) return null;
   const lower = payload.lower;
   const upper = payload.upper;
+  
   if (lower == null || upper == null) {
-    return <circle cx={cx} cy={cy} r={3} fill={color} stroke="#1e293b" strokeWidth={1.5} />;
+    return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#1A211D" strokeWidth={1.5} />;
   }
+  
   return (
-    <g>
-      <line x1={cx} y1={cy - 6} x2={cx} y2={cy + 6} stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
-      <line x1={cx - 3} y1={cy - 6} x2={cx + 3} y2={cy - 6} stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
-      <line x1={cx - 3} y1={cy + 6} x2={cx + 3} y2={cy + 6} stroke={color} strokeWidth={1.5} strokeOpacity={0.6} />
-      <circle cx={cx} cy={cy} r={4} fill={color} stroke="#1e293b" strokeWidth={1.5} />
+    <g className="error-bar-group" style={{ cursor: 'pointer' }}>
+      <line x1={cx} y1={cy - 8} x2={cx} y2={cy + 8} stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
+      <line x1={cx - 4} y1={cy - 8} x2={cx + 4} y2={cy - 8} stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
+      <line x1={cx - 4} y1={cy + 8} x2={cx + 4} y2={cy + 8} stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
+      <circle cx={cx} cy={cy} r={5} fill={color} stroke="#1A211D" strokeWidth={1.5} />
+      <g className="bounds-label" opacity="0">
+        <rect x={cx - 44} y={cy - 26} width={88} height={18} rx={5} fill="#1A211D" stroke={color} strokeWidth={1} />
+        <text x={cx} y={cy - 14} textAnchor="middle" fill={color} fontSize={10} fontWeight="bold" fontFamily="IBM Plex Mono, monospace">↑ {upper.toFixed(2)}</text>
+        <rect x={cx - 44} y={cy + 8} width={88} height={18} rx={5} fill="#1A211D" stroke={color} strokeWidth={1} />
+        <text x={cx} y={cy + 20} textAnchor="middle" fill={color} fontSize={10} fontWeight="bold" fontFamily="IBM Plex Mono, monospace">↓ {lower.toFixed(2)}</text>
+      </g>
+      <title>{`Predicted: ${payload.value?.toFixed(2)}\nUpper (95%): ${upper.toFixed(2)}\nLower (95%): ${lower.toFixed(2)}`}</title>
     </g>
   );
-}
+};
 
 // ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
@@ -115,15 +137,19 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
   const hasConfidenceIntervals = allData.some(d => d.lower != null && d.upper != null);
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-slate-500 mb-4">{hasConfidenceIntervals ? "Projected Kwacha movement with 95% confidence intervals." : "Projected Kwacha movement across timeframes."}</p>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-3">Forecast outlook</h3>
+      <p className="text-xs text-stone-500 mb-4">
+        {hasConfidenceIntervals 
+          ? "Projected Kwacha movement with 95% confidence intervals. Hover on any dot to see upper and lower bounds." 
+          : "Projected Kwacha movement across timeframes."}
+      </p>
       <ResponsiveContainer width="100%" height={250}>
         <LineChart data={allData}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-          <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#94a3b8', fontSize: 10 }} />
-          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
-          <Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }} 
+          <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
+          <XAxis dataKey="day" tick={{ fill: '#8A968D', fontSize: 10 }} label={{ value: 'Days ahead', position: 'insideBottom', fill: '#8A968D', fontSize: 10 }} />
+          <YAxis tick={{ fill: '#8A968D', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }} 
             formatter={(v, name) => {
               if (v == null) return ['N/A', name];
               if (name === 'value') return [`MWK ${Number(v).toFixed(2)}`, 'Predicted'];
@@ -133,18 +159,18 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
             }} 
             labelFormatter={(day) => allData.find(d => d.day === day)?.date || `Day ${day}`} />
           <Legend />
-          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "Next day")} stroke="#34d399" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#34d399" />} name="Next day" />
-          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "7 days")} stroke="#60a5fa" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#60a5fa" />} name="7 days" />
-          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "30 days")} stroke="#fbbf24" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#fbbf24" />} name="30 days" />
+          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "Next day")} stroke="#E0AC4F" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#E0AC4F" />} name="Next day" />
+          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "7 days")} stroke="#7DA0C4" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#7DA0C4" />} name="7 days" />
+          <Line type="monotone" dataKey="value" data={allData.filter(d => d.horizon === "30 days")} stroke="#6FAE82" strokeWidth={2} dot={(props) => <ErrorBarDot {...props} color="#6FAE82" />} name="30 days" />
         </LineChart>
       </ResponsiveContainer>
       {hasConfidenceIntervals && (
         <details className="mt-3 group">
-          <summary className="text-xs text-slate-500 cursor-pointer hover:text-slate-400 transition">💡 How to interpret this chart</summary>
-          <div className="mt-2 p-3 bg-slate-700/40 rounded-lg text-xs text-slate-400 space-y-1.5">
-            <p>• <span className="text-slate-300 font-medium">Dots with vertical lines</span> show the predicted rate with its 95% confidence interval.</p>
-            <p>• <span className="text-slate-300 font-medium">Longer lines</span> = more uncertainty. 30-day forecasts naturally have wider intervals.</p>
-            <p>• Hover over any point to see exact values.</p>
+          <summary className="text-xs text-stone-500 cursor-pointer hover:text-stone-400 transition">💡 How to interpret this chart</summary>
+          <div className="mt-2 p-3 bg-stone-700/40 rounded-lg text-xs text-stone-400 space-y-1.5">
+            <p>• <span className="text-stone-300 font-medium">Dots with vertical lines</span> show the predicted rate with its 95% confidence interval.</p>
+            <p>• <span className="text-stone-300 font-medium">Hover over any dot</span> to see the exact upper (↑) and lower (↓) bound values.</p>
+            <p>• <span className="text-stone-300 font-medium">Longer lines</span> = more uncertainty. 30-day forecasts naturally have wider intervals.</p>
           </div>
         </details>
       )}
@@ -158,17 +184,17 @@ function KeyInsight({ displayRate, sevenDayChange, accuracy }) {
   const isStable = Math.abs(pct) < 0.3;
   
   return (
-    <div className="bg-gradient-to-r from-emerald-900/30 to-slate-800/60 rounded-2xl p-4 border border-emerald-500/20">
+    <div className="bg-gradient-to-r from-gold-500/10 to-stone-900/60 rounded-2xl p-4 border border-gold-500/20">
       <div className="flex items-center gap-3">
-        <Target className="w-5 h-5 text-emerald-400 shrink-0" />
+        <Target className="w-5 h-5 text-gold-400 shrink-0" />
         <div>
-          <p className="text-white font-semibold text-sm">
+          <p className="text-stone-100 font-semibold text-sm">
             {isStable 
               ? `The Kwacha is expected to remain stable at ~MWK ${displayRate?.rate?.toFixed(2) || '---'} this week.`
-              : `The Kwacha is expected to move by ${Math.abs(pct).toFixed(2)}% over the next 7 days (${sevenDayChange?.direction === 'up' ? 'weakening' : 'strengthening'}).`
+              : `The Kwacha is expected to ${sevenDayChange?.direction === 'up' ? 'weaken' : 'strengthen'} by ${Math.abs(pct).toFixed(2)}% over the next 7 days.`
             }
           </p>
-          <p className="text-slate-400 text-xs mt-0.5">
+          <p className="text-stone-400 text-xs mt-0.5">
             Our models have a {accuracy?.avg_error_pct || '0.3'}% error rate based on {accuracy?.comparisons?.length || '3'} historical comparisons.
           </p>
         </div>
@@ -181,7 +207,7 @@ function KeyInsight({ displayRate, sevenDayChange, accuracy }) {
 function LastUpdated() {
   const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   return (
-    <div className="text-slate-500 text-xs flex items-center gap-1">
+    <div className="text-stone-500 text-xs flex items-center gap-1">
       <Clock className="w-3 h-3" />
       Last updated: {today}
     </div>
@@ -189,41 +215,206 @@ function LastUpdated() {
 }
 
 // ── What You Should Do ────────────────────────────────────────────────────────
-function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate }) {
-  const getAdvice = (label, change) => {
+function WhenToAct({ nextDayChange, sevenDayChange, thirtyDayChange, displayRate, forecast1d, forecast7d, forecast30d }) {
+  const getAdvice = (label, change, horizon) => {
     const pct = parseFloat(change?.pct || 0);
     const dir = change?.direction;
     const absPct = Math.abs(pct);
-    if (absPct < 0.3) return { level: "Stable", color: "text-emerald-400", bg: "bg-emerald-500/10", short: "No action needed — rate is holding steady.", detail: "Continue with your regular transactions." };
-    if (dir === "up") return { level: "Weakening", color: "text-red-400", bg: "bg-red-500/10", short: `Kwacha may lose ~${absPct.toFixed(1)}% of value.`, detail: "If you need USD for imports, school fees, or travel, buy sooner rather than later." };
-    return { level: "Strengthening", color: "text-emerald-400", bg: "bg-emerald-500/10", short: `Kwacha may gain ~${absPct.toFixed(1)}% against USD.`, detail: "If you hold USD, convert to Kwacha now. Importers can wait for better rates." };
+    
+    let confidenceWidth = 0;
+    let forecastData = null;
+    if (horizon === 1) forecastData = forecast1d;
+    else if (horizon === 7) forecastData = forecast7d;
+    else if (horizon === 30) forecastData = forecast30d;
+    
+    if (forecastData?.lower_bound && forecastData?.upper_bound) {
+      confidenceWidth = forecastData.upper_bound - forecastData.lower_bound;
+    } else if (forecastData?.forecasts) {
+      const lastForecast = forecastData.forecasts[forecastData.forecasts.length - 1];
+      if (lastForecast?.lower_bound && lastForecast?.upper_bound) {
+        confidenceWidth = lastForecast.upper_bound - lastForecast.lower_bound;
+      }
+    }
+    
+    const predictedRate = forecastData?.predicted_rate || (forecastData?.forecasts ? forecastData.forecasts[forecastData.forecasts.length - 1]?.predicted_rate : null);
+    const pctWidth = predictedRate && confidenceWidth > 0 ? (confidenceWidth / predictedRate) * 100 : 100;
+    const highConfidence = pctWidth < 1.0;
+    const moderateConfidence = pctWidth < 3.0;
+    const significantMove = absPct > 0.5;
+    const minorMove = absPct > 0.15 && absPct <= 0.5;
+    
+    if (!significantMove && !minorMove && highConfidence) {
+      return { level: "Hold", color: "text-gold-400", bg: "bg-gold-500/10", short: "Rate is stable with high certainty.", detail: `Tight confidence interval (±${(confidenceWidth/2).toFixed(1)} MWK, ${pctWidth.toFixed(1)}% of rate). No urgency to act.` };
+    }
+    if (!significantMove && !minorMove && !highConfidence) {
+      return { level: "Monitor", color: "text-yellow-400", bg: "bg-yellow-500/10", short: "Rate appears stable but confidence is moderate.", detail: `Confidence interval: ±${(confidenceWidth/2).toFixed(1)} MWK (${pctWidth.toFixed(1)}% of rate). Check back tomorrow.` };
+    }
+    if (dir === "up" && significantMove && highConfidence) {
+      return { level: "Hedge Now", color: "text-terracotta-400", bg: "bg-terracotta-500/10", short: `Strong signal: Kwacha may lose ~${absPct.toFixed(1)}%.`, detail: `All models agree on weakening. Tight interval (±${(confidenceWidth/2).toFixed(1)} MWK). Buy USD now.` };
+    }
+    if (dir === "up" && (significantMove || minorMove) && !highConfidence && moderateConfidence) {
+      return { level: "Consider Hedging", color: "text-terracotta-400", bg: "bg-terracotta-500/10", short: `Kwacha may weaken ~${absPct.toFixed(1)}% with moderate confidence.`, detail: "Consider hedging 50% now, reassess tomorrow." };
+    }
+    if (dir === "up" && !highConfidence && !moderateConfidence) {
+      return { level: "Monitor Closely", color: "text-yellow-400", bg: "bg-yellow-500/10", short: `Possible weakening but low confidence.`, detail: `Wide confidence interval (±${(confidenceWidth/2).toFixed(1)} MWK). Wait for clearer signal.` };
+    }
+    if (dir === "down" && significantMove && highConfidence) {
+      return { level: "Wait (High Confidence)", color: "text-gold-400", bg: "bg-gold-500/10", short: `Strong signal: Kwacha may gain ~${absPct.toFixed(1)}%.`, detail: `All models agree on strengthening. Delay USD purchases.` };
+    }
+    if (dir === "down" && (significantMove || minorMove) && !highConfidence) {
+      return { level: "Likely Strengthening", color: "text-gold-400", bg: "bg-gold-500/10", short: `Kwacha may gain ~${absPct.toFixed(1)}%.`, detail: "Most models point to strengthening. Waiting could save you money." };
+    }
+    return { level: "Monitor", color: "text-yellow-400", bg: "bg-yellow-500/10", short: "Uncertain — monitor before acting.", detail: "Forecast confidence is low. Wait for clearer signal." };
   };
+  
   const stages = [
-    { label: "Today", change: nextDayChange, icon: Zap },
-    { label: "This week", change: sevenDayChange, icon: TrendingUp },
-    { label: "This month", change: thirtyDayChange, icon: Target },
+    { label: "Today", change: nextDayChange, icon: Zap, horizon: 1 },
+    { label: "This week", change: sevenDayChange, icon: TrendingUp, horizon: 7 },
+    { label: "This month", change: thirtyDayChange, icon: Target, horizon: 30 },
   ];
+  
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4">What you should do</h3>
-      <p className="text-xs text-slate-500 mb-4">Guidance based on forecast at MWK {displayRate?.rate?.toFixed(2) || '---'}.</p>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-4">What you should do</h3>
+      <p className="text-xs text-stone-500 mb-4">Guidance based on forecast at MWK {displayRate?.rate?.toFixed(2) || '---'}.</p>
       <div className="space-y-3">
         {stages.map((stage, i) => {
-          const advice = getAdvice(stage.label, stage.change);
+          const advice = getAdvice(stage.label, stage.change, stage.horizon);
           const Icon = stage.icon;
           return (
             <div key={i} className={`${advice.bg} rounded-xl p-4`}>
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2"><Icon className={`w-4 h-4 ${advice.color}`} /><span className="text-sm font-medium text-slate-300">{stage.label}</span></div>
+                <div className="flex items-center gap-2"><Icon className={`w-4 h-4 ${advice.color}`} /><span className="text-sm font-medium text-stone-300">{stage.label}</span></div>
                 <span className={`text-xs font-bold ${advice.color}`}>{advice.level}</span>
               </div>
-              <p className="text-xs text-slate-200 font-medium mb-1">{advice.short}</p>
-              <p className="text-xs text-slate-400">{advice.detail}</p>
-              {stage.change && <p className="text-xs text-slate-500 mt-2">Expected: {stage.change.direction === "up" ? "↗" : "↘"} {stage.change.pct}%</p>}
+              <p className="text-xs text-stone-200 font-medium mb-1">{advice.short}</p>
+              <p className="text-xs text-stone-400">{advice.detail}</p>
+              {stage.change && <p className="text-xs text-stone-500 mt-2">Expected: {stage.change.direction === "up" ? "↗" : "↘"} {stage.change.pct}%</p>}
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Decision Impact Analysis ──────────────────────────────────────────────────
+function DecisionImpact({ displayRate, sevenDayChange, thirtyDayChange, forecast7d, forecast30d }) {
+  if (!displayRate?.rate) return null;
+  
+  const getConfidence = (forecastData) => {
+    let lower, upper, predicted;
+    if (forecastData?.lower_bound && forecastData?.upper_bound) {
+      lower = forecastData.lower_bound;
+      upper = forecastData.upper_bound;
+      predicted = forecastData.predicted_rate;
+    } else if (forecastData?.forecasts) {
+      const last = forecastData.forecasts[forecastData.forecasts.length - 1];
+      if (last?.lower_bound && last?.upper_bound) {
+        lower = last.lower_bound;
+        upper = last.upper_bound;
+        predicted = last.predicted_rate;
+      }
+    }
+    if (lower && upper && predicted) {
+      const width = upper - lower;
+      const pctWidth = (width / predicted) * 100;
+      return { width, pctWidth, isHigh: pctWidth < 1.0, isModerate: pctWidth < 3.0 };
+    }
+    return null;
+  };
+  
+  const conf7d = getConfidence(forecast7d);
+  const conf30d = getConfidence(forecast30d);
+  
+  const pct7d = Math.abs(parseFloat(sevenDayChange?.pct || 0));
+  const pct30d = Math.abs(parseFloat(thirtyDayChange?.pct || 0));
+  const dir7d = sevenDayChange?.direction;
+  const dir30d = thirtyDayChange?.direction;
+  
+  const transactionSizes = [1000, 5000, 10000];
+  
+  const getRecommendation = (pct, dir, conf, horizon) => {
+    const isStable = pct < 0.15;
+    if (isStable && conf?.isHigh) return "No action — rate is stable with high certainty.";
+    if (isStable) return "Rate appears stable. Monitor but no urgency.";
+    if (conf?.isHigh) {
+      return dir === "up" ? `Hedge now — strong signal Kwacha will weaken over ${horizon} days.` : `Wait — strong signal Kwacha will strengthen over ${horizon} days.`;
+    }
+    if (conf?.isModerate) return "Consider partial action — moderate confidence in this forecast.";
+    return `Monitor — confidence is lower for ${horizon}-day forecasts. This is normal.`;
+  };
+
+  return (
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-3 flex items-center gap-2">
+        <DollarSign className="w-4 h-4 text-gold-400" />
+        Decision Impact Analysis
+      </h3>
+      <p className="text-xs text-stone-500 mb-4">Estimated cost of waiting if forecast is correct</p>
+      
+      <div className="mb-4">
+        <p className="text-xs text-stone-400 font-medium mb-2">7-Day Forecast Impact</p>
+        <div className="space-y-2 mb-3">
+          {transactionSizes.map(size => {
+            const potentialLoss = size * (pct7d / 100) * displayRate.rate;
+            return (
+              <div key={`7d-${size}`} className="bg-stone-700/40 rounded-lg p-3 flex justify-between items-center">
+                <div><span className="text-xs text-stone-300 font-medium">${size.toLocaleString()}</span><span className="text-xs text-stone-500 ml-2">{dir7d === "up" ? "extra cost" : "savings"} if you wait</span></div>
+                <span className={`text-sm font-bold font-data ${dir7d === "up" ? 'text-terracotta-400' : 'text-gold-400'}`}>~MWK {potentialLoss.toFixed(0)}</span>
+              </div>
+            );
+          })}
+        </div>
+        {conf7d && (
+          <div className="bg-stone-700/40 rounded-lg p-3 mb-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-stone-400">Confidence (7-day)</span>
+              <span className={`text-sm font-bold ${conf7d.isHigh ? 'text-gold-400' : conf7d.isModerate ? 'text-yellow-400' : 'text-stone-400'}`}>
+                {conf7d.isHigh ? 'High' : conf7d.isModerate ? 'Moderate' : 'Lower'}
+                <span className="font-normal text-xs ml-1">(±{conf7d.width.toFixed(1)} MWK, {conf7d.pctWidth.toFixed(1)}% of rate)</span>
+              </span>
+            </div>
+            <p className="text-xs text-stone-500 mt-1">
+              {conf7d.isHigh ? 'Tight interval — models agree closely.' : conf7d.isModerate ? 'Moderate spread — reasonable confidence.' : `Wider interval (±${conf7d.width.toFixed(1)} MWK) — models disagree on magnitude. Common in FX forecasting.`}
+            </p>
+          </div>
+        )}
+        <p className="text-xs text-stone-500 italic">💡 {getRecommendation(pct7d, dir7d, conf7d, 7)}</p>
+      </div>
+      
+      <div className="border-t border-stone-700 pt-4">
+        <p className="text-xs text-stone-400 font-medium mb-2">30-Day Forecast Impact</p>
+        <div className="space-y-2 mb-3">
+          {transactionSizes.map(size => {
+            const potentialLoss = size * (pct30d / 100) * displayRate.rate;
+            return (
+              <div key={`30d-${size}`} className="bg-stone-700/40 rounded-lg p-3 flex justify-between items-center">
+                <div><span className="text-xs text-stone-300 font-medium">${size.toLocaleString()}</span><span className="text-xs text-stone-500 ml-2">{dir30d === "up" ? "extra cost" : "savings"} if you wait</span></div>
+                <span className={`text-sm font-bold font-data ${dir30d === "up" ? 'text-terracotta-400' : 'text-gold-400'}`}>~MWK {potentialLoss.toFixed(0)}</span>
+              </div>
+            );
+          })}
+        </div>
+        {conf30d && (
+          <div className="bg-stone-700/40 rounded-lg p-3 mb-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-stone-400">Confidence (30-day)</span>
+              <span className={`text-sm font-bold ${conf30d.isHigh ? 'text-gold-400' : conf30d.isModerate ? 'text-yellow-400' : 'text-stone-400'}`}>
+                {conf30d.isHigh ? 'High' : conf30d.isModerate ? 'Moderate' : 'Lower'}
+                <span className="font-normal text-xs ml-1">(±{conf30d.width.toFixed(1)} MWK, {conf30d.pctWidth.toFixed(1)}% of rate)</span>
+              </span>
+            </div>
+            <p className="text-xs text-stone-500 mt-1">30-day forecasts naturally have wider intervals — uncertainty increases with time.</p>
+          </div>
+        )}
+        {pct7d.toFixed(2) === pct30d.toFixed(2) && (
+          <p className="text-xs text-stone-500 mb-2 italic">📌 7-day and 30-day impacts are similar because the forecast shows the rate stabilizing.</p>
+        )}
+        <p className="text-xs text-stone-500 italic">💡 {getRecommendation(pct30d, dir30d, conf30d, 30)}</p>
+      </div>
+      
+      <p className="text-xs text-stone-500 mt-4 border-t border-stone-700 pt-3">⚠️ Decision-support tool, not financial advice.</p>
     </div>
   );
 }
@@ -244,15 +435,15 @@ function WhoThisAffects({ displayRate, sevenDayChange }) {
   ];
 
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <h3 className="text-sm font-semibold text-slate-300 mb-4">How this affects you</h3>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <h3 className="text-sm font-semibold text-stone-300 mb-4">How this affects you</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {personas.map((p, i) => {
           const Icon = p.icon;
           return (
-            <div key={i} className="bg-slate-700/40 rounded-xl p-3 flex items-start gap-3">
-              <Icon className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-              <div><p className="text-xs font-medium text-slate-300">{p.who}</p><p className="text-xs text-slate-400 mt-0.5">{p.advice}</p></div>
+            <div key={i} className="bg-stone-700/40 rounded-xl p-3 flex items-start gap-3">
+              <Icon className="w-4 h-4 text-gold-400 shrink-0 mt-0.5" />
+              <div><p className="text-xs font-medium text-stone-300">{p.who}</p><p className="text-xs text-stone-400 mt-0.5">{p.advice}</p></div>
             </div>
           );
         })}
@@ -264,15 +455,36 @@ function WhoThisAffects({ displayRate, sevenDayChange }) {
 // ── Rate Statistics ───────────────────────────────────────────────────────────
 function RateStats({ stats }) {
   if (!stats) return null;
+  
+  const sevenDayTrend = stats.change_7d > 0 ? 'weakening' : stats.change_7d < 0 ? 'strengthening' : 'stable';
+  const thirtyDayTrend = stats.change_30d > 0 ? 'weakening' : stats.change_30d < 0 ? 'strengthening' : 'stable';
+  const volatility = stats.max_7d && stats.min_7d ? stats.max_7d - stats.min_7d : 0;
+  const isVolatile = volatility > 5;
+  
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <div className="flex items-center gap-2 mb-3"><BarChart3 className="w-4 h-4 text-blue-400" /><h3 className="text-sm font-semibold text-slate-300">Rate statistics</h3></div>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div><p className="text-slate-400 text-xs">7-day range</p><p className="text-white font-medium">{stats.min_7d?.toFixed(2)} – {stats.max_7d?.toFixed(2)}</p></div>
-        <div><p className="text-slate-400 text-xs">7-day change</p><p className={`font-medium ${stats.change_7d > 0 ? 'text-red-400' : 'text-emerald-400'}`}>{stats.change_7d > 0 ? '+' : ''}{stats.change_7d?.toFixed(2)} ({stats.change_pct_7d?.toFixed(2)}%)</p></div>
-        <div><p className="text-slate-400 text-xs">30-day range</p><p className="text-white font-medium">{stats.min_30d?.toFixed(2)} – {stats.max_30d?.toFixed(2)}</p></div>
-        <div><p className="text-slate-400 text-xs">30-day average</p><p className="text-white font-medium">{stats.avg_30d?.toFixed(2)}</p></div>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <div className="flex items-center gap-2 mb-3"><BarChart3 className="w-4 h-4 text-blue-400" /><h3 className="text-sm font-semibold text-stone-300">Rate statistics</h3></div>
+      
+      <div className="bg-stone-700/40 rounded-lg p-3 mb-4">
+        <p className="text-xs text-stone-400 mb-1">Past 7 days (actual)</p>
+        <p className={`text-sm font-semibold ${sevenDayTrend === 'weakening' ? 'text-terracotta-400' : sevenDayTrend === 'strengthening' ? 'text-gold-400' : 'text-stone-300'}`}>
+          {sevenDayTrend === 'weakening' ? '↗ Kwacha weakened' : sevenDayTrend === 'strengthening' ? '↘ Kwacha strengthened' : '→ Rate stable'}
+          <span className="text-stone-400 font-normal ml-2">({stats.change_7d > 0 ? '+' : ''}{stats.change_7d?.toFixed(2)} MWK, {Math.abs(stats.change_pct_7d)?.toFixed(2)}%)</span>
+        </p>
+        <p className="text-xs text-stone-500 mt-1">
+          {sevenDayTrend === 'weakening' ? 'Rate increased — it costs more MWK to buy USD now than 7 days ago.' :
+           sevenDayTrend === 'strengthening' ? 'Rate decreased — it costs fewer MWK to buy USD now than 7 days ago.' :
+           'Rate has been stable over the past week.'}
+        </p>
+        {isVolatile && <p className="text-xs text-yellow-400 mt-1">⚠️ Above normal volatility — forecasts may be less certain</p>}
       </div>
+      
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div><p className="text-stone-400 text-xs">7-day range</p><p className="text-stone-100 font-medium font-data">{stats.min_7d?.toFixed(2)} – {stats.max_7d?.toFixed(2)}</p><p className="text-stone-500 text-xs mt-0.5">Spread: {volatility.toFixed(2)} MWK</p></div>
+        <div><p className="text-stone-400 text-xs">30-day trend</p><p className={`text-stone-100 font-medium font-data ${thirtyDayTrend === 'weakening' ? 'text-terracotta-400' : thirtyDayTrend === 'strengthening' ? 'text-gold-400' : ''}`}>{stats.change_30d > 0 ? '+' : ''}{stats.change_30d?.toFixed(2)} ({Math.abs(stats.change_pct_30d)?.toFixed(2)}%)</p><p className="text-stone-500 text-xs mt-0.5">30-day avg: {stats.avg_30d?.toFixed(2)}</p></div>
+      </div>
+      
+      <p className="text-xs text-stone-500 mt-3 italic">📌 Past performance shows what happened. Forecasts predict what may happen next. They can differ.</p>
     </div>
   );
 }
@@ -281,15 +493,15 @@ function RateStats({ stats }) {
 function AccuracyCard({ accuracy }) {
   if (!accuracy?.comparisons?.length) return null;
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-emerald-400" /><h3 className="text-sm font-semibold text-slate-300">Model accuracy</h3></div>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <div className="flex items-center gap-2 mb-3"><Shield className="w-4 h-4 text-gold-400" /><h3 className="text-sm font-semibold text-stone-300">Model accuracy</h3></div>
       <div className="grid grid-cols-2 gap-3 text-sm mb-3">
-        <div><p className="text-slate-400 text-xs">Average error</p><p className="text-white font-medium">{accuracy.avg_error_mwk} MWK</p></div>
-        <div><p className="text-slate-400 text-xs">Error rate</p><p className="text-white font-medium">{accuracy.avg_error_pct}%</p></div>
-        <div><p className="text-slate-400 text-xs">Within range</p><p className="text-emerald-400 font-bold">{accuracy.within_range_pct}%</p></div>
-        <div><p className="text-slate-400 text-xs">Comparisons</p><p className="text-white font-medium">{accuracy.comparisons.length} data points</p></div>
+        <div><p className="text-stone-400 text-xs">Average error</p><p className="text-stone-100 font-medium">{accuracy.avg_error_mwk} MWK</p></div>
+        <div><p className="text-stone-400 text-xs">Error rate</p><p className="text-stone-100 font-medium">{accuracy.avg_error_pct}%</p></div>
+        <div><p className="text-stone-400 text-xs">Within range</p><p className="text-gold-400 font-bold">{accuracy.within_range_pct}%</p></div>
+        <div><p className="text-stone-400 text-xs">Comparisons</p><p className="text-stone-100 font-medium">{accuracy.comparisons.length} data points</p></div>
       </div>
-      <p className="text-xs text-slate-500">Based on {accuracy.comparisons.length} past forecasts compared to actual Reserve Bank rates.</p>
+      <p className="text-xs text-stone-500">Based on {accuracy.comparisons.length} past forecasts compared to actual Reserve Bank rates.</p>
     </div>
   );
 }
@@ -297,35 +509,15 @@ function AccuracyCard({ accuracy }) {
 // ── Rate Alerts ──────────────────────────────────────────────────────────────
 function RateAlerts({ alerts }) {
   if (!alerts?.alerts?.length) return null;
-  
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <div className="flex items-center gap-2 mb-3">
-        <Bell className="w-4 h-4 text-yellow-400" />
-        <h3 className="text-sm font-semibold text-slate-300">Rate alerts</h3>
-        {alerts.alerts.length > 0 && (
-          <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded-full">{alerts.alerts.length}</span>
-        )}
-      </div>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <div className="flex items-center gap-2 mb-3"><Bell className="w-4 h-4 text-yellow-400" /><h3 className="text-sm font-semibold text-stone-300">Rate alerts</h3></div>
       <div className="space-y-2">
         {alerts.alerts.slice(0, 3).map((alert, i) => (
-          <div key={i} className={`p-3 rounded-lg text-xs ${
-            alert.level === 'warning' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' :
-            alert.level === 'critical' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
-            'bg-blue-500/10 border border-blue-500/20 text-blue-400'
-          }`}>
-            <div className="flex items-start gap-2">
-              <Bell className="w-3 h-3 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">{alert.message}</p>
-                {alert.detail && <p className="mt-0.5 opacity-80">{alert.detail}</p>}
-              </div>
-            </div>
+          <div key={i} className={`p-3 rounded-lg text-xs ${alert.level === 'warning' ? 'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400' : alert.level === 'critical' ? 'bg-terracotta-500/10 border border-terracotta-500/20 text-terracotta-400' : 'bg-blue-500/10 border border-blue-500/20 text-blue-400'}`}>
+            <div className="flex items-start gap-2"><Bell className="w-3 h-3 shrink-0 mt-0.5" /><div><p className="font-medium">{alert.message}</p>{alert.detail && <p className="mt-0.5 opacity-80">{alert.detail}</p>}</div></div>
           </div>
         ))}
-        {alerts.alerts.length > 3 && (
-          <p className="text-xs text-slate-500 text-center">+{alerts.alerts.length - 3} more alerts</p>
-        )}
       </div>
     </div>
   );
@@ -334,25 +526,13 @@ function RateAlerts({ alerts }) {
 // ── Quick FAQ ────────────────────────────────────────────────────────────────
 function QuickFAQ() {
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
-      <div className="flex items-center gap-2 mb-3"><HelpCircle className="w-4 h-4 text-purple-400" /><h3 className="text-sm font-semibold text-slate-300">Quick answers</h3></div>
+    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
+      <div className="flex items-center gap-2 mb-3"><HelpCircle className="w-4 h-4 text-purple-400" /><h3 className="text-sm font-semibold text-stone-300">Quick answers</h3></div>
       <div className="space-y-2 text-sm">
-        <details className="group">
-          <summary className="text-slate-400 cursor-pointer hover:text-slate-300 text-xs">How often are forecasts updated?</summary>
-          <p className="text-slate-500 text-xs mt-1 ml-4">Forecasts are generated daily. Click "Refresh" to get the latest predictions.</p>
-        </details>
-        <details className="group">
-          <summary className="text-slate-400 cursor-pointer hover:text-slate-300 text-xs">What does "Strengthening" mean?</summary>
-          <p className="text-slate-500 text-xs mt-1 ml-4">It means the Kwacha is gaining value. You need fewer Kwacha to buy 1 USD.</p>
-        </details>
-        <details className="group">
-          <summary className="text-slate-400 cursor-pointer hover:text-slate-300 text-xs">How accurate are these forecasts?</summary>
-          <p className="text-slate-500 text-xs mt-1 ml-4">Our models achieve 0.30% MAPE — predictions are typically within 5 MWK of the actual rate.</p>
-        </details>
-        <details className="group">
-          <summary className="text-slate-400 cursor-pointer hover:text-slate-300 text-xs">Where does the data come from?</summary>
-          <p className="text-slate-500 text-xs mt-1 ml-4">Exchange rates from the Reserve Bank of Malawi and live currency APIs. Updated daily.</p>
-        </details>
+        <details className="group"><summary className="text-stone-400 cursor-pointer hover:text-stone-300 text-xs">How often are forecasts updated?</summary><p className="text-stone-500 text-xs mt-1 ml-4">Forecasts are generated daily. Click "Refresh" to get the latest predictions.</p></details>
+        <details className="group"><summary className="text-stone-400 cursor-pointer hover:text-stone-300 text-xs">What does "Hedge Now" mean?</summary><p className="text-stone-500 text-xs mt-1 ml-4">It means our models strongly predict the Kwacha will weaken. Buying USD now locks in a better rate than waiting.</p></details>
+        <details className="group"><summary className="text-stone-400 cursor-pointer hover:text-stone-300 text-xs">Why do past and forecast trends differ?</summary><p className="text-stone-500 text-xs mt-1 ml-4">Past trends show what already happened. Forecasts predict what may happen next. They can differ when models expect a reversal.</p></details>
+        <details className="group"><summary className="text-stone-400 cursor-pointer hover:text-stone-300 text-xs">Where does the data come from?</summary><p className="text-stone-500 text-xs mt-1 ml-4">Exchange rates from the Reserve Bank of Malawi and live currency APIs. Updated daily.</p></details>
       </div>
     </div>
   );
@@ -360,13 +540,11 @@ function QuickFAQ() {
 
 function EmptyForecasts({ onGenerate, generating }) {
   return (
-    <div className="bg-slate-800/60 rounded-2xl p-12 border border-slate-700/60 flex flex-col items-center gap-4 text-center">
-      <Calendar className="w-14 h-14 text-slate-500" />
-      <h3 className="text-white font-semibold text-xl">No forecasts yet</h3>
-      <p className="text-slate-400 text-sm max-w-md">Click below to generate today's exchange rate forecasts.</p>
-      <button onClick={onGenerate} disabled={generating} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white px-6 py-3 rounded-xl font-semibold transition flex items-center gap-2 mt-2">
-        {generating && <Loader2 className="w-4 h-4 animate-spin" />}{generating ? "Generating..." : "Generate forecasts"}
-      </button>
+    <div className="bg-stone-900/60 rounded-2xl p-12 border border-stone-700/60 flex flex-col items-center gap-4 text-center">
+      <Calendar className="w-14 h-14 text-stone-500" />
+      <h3 className="text-stone-100 font-semibold text-xl">No forecasts yet</h3>
+      <p className="text-stone-400 text-sm max-w-md">Click below to generate today's exchange rate forecasts.</p>
+      <button onClick={onGenerate} disabled={generating} className="bg-gold-400 hover:bg-gold-300 disabled:bg-stone-700 disabled:text-stone-400 text-ink-950 px-6 py-3 rounded-xl font-semibold transition flex items-center gap-2 mt-2">{generating && <Loader2 className="w-4 h-4 animate-spin" />}{generating ? "Generating..." : "Generate forecasts"}</button>
     </div>
   );
 }
@@ -383,7 +561,7 @@ export default function Dashboard() {
   const [accuracy, setAccuracy] = useState(null);
   const [alerts, setAlerts] = useState(null);
 
-  const { latestRate, forecasts, history, loading, noForecasts, refetch } = useDashboardData(7);
+  const { latestRate, forecasts, history, loading, noForecasts, refetch, historicalForecasts } = useDashboardData(7);
 
   const fetchAllData = async () => {
     const [summary, stats, acc, full7d, full30d, alertsData] = await Promise.all([
@@ -437,62 +615,51 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">KwachaCast</h1>
-          <p className="text-slate-400 text-sm mt-1">Exchange rate forecasts for the Malawi Kwacha</p>
+          <h1 className="font-display text-2xl font-semibold text-stone-100">KwachaCast</h1>
+          <p className="text-stone-400 text-sm mt-1">Exchange rate forecasts for the Malawi Kwacha</p>
           <LastUpdated />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => window.open('https://kwachacast-api.onrender.com/api/v1/forecasts/export?horizon=7&format=csv', '_blank')} className="text-slate-400 hover:text-white text-sm flex items-center gap-1">
-            <Download className="w-3.5 h-3.5" />Export
-          </button>
-          <button onClick={handleGenerate} disabled={generating} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
-            {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}{generating ? "Generating..." : "Refresh"}
-          </button>
+          <button onClick={() => window.open('https://kwachacast-api.onrender.com/api/v1/forecasts/export?horizon=7&format=csv', '_blank')} className="text-stone-400 hover:text-stone-100 text-sm flex items-center gap-1"><Download className="w-3.5 h-3.5" />Export</button>
+          <button onClick={handleGenerate} disabled={generating} className="bg-gold-400 hover:bg-gold-300 disabled:bg-stone-700 disabled:text-stone-400 text-ink-950 text-sm px-4 py-2 rounded-lg font-semibold transition flex items-center gap-2">{generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}{generating ? "Generating..." : "Refresh"}</button>
         </div>
       </div>
+      <div className="rate-wave-divider" />
 
-      {generateMsg && <div className="rounded-xl p-3 text-sm bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">{generateMsg}</div>}
-      {loading && <div className="grid grid-cols-4 gap-4 animate-pulse">{[...Array(4)].map((_, i) => <div key={i} className="bg-slate-800/60 rounded-2xl h-32 border border-slate-700/60" />)}</div>}
+      {generateMsg && <div className="rounded-xl p-3 text-sm bg-gold-500/10 border border-gold-500/20 text-gold-400">{generateMsg}</div>}
+      {loading && <div className="grid grid-cols-4 gap-4 animate-pulse">{[...Array(4)].map((_, i) => <div key={i} className="bg-stone-900/60 rounded-2xl h-32 border border-stone-700/60" />)}</div>}
       {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
-
-      {/* Rate Alerts */}
       {!loading && alerts && <RateAlerts alerts={alerts} />}
 
-      {/* KPI Cards */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {kpis.map((kpi, i) => (
-            <div key={i} className={`bg-slate-800/60 border ${i === 0 ? 'border-emerald-500/20' : 'border-slate-700/60'} rounded-2xl p-5`}>
-              <p className="text-slate-400 text-xs uppercase tracking-wider mb-1">{kpi.label}</p>
-              <p className="text-2xl font-bold text-white">{kpi.value}</p>
-              {kpi.change && <p className={`text-sm font-medium mt-1 ${kpi.change.direction === "up" ? "text-red-400" : "text-emerald-400"}`}>{kpi.change.direction === "up" ? "↗" : "↘"} {kpi.change.pct}%</p>}
+            <div key={i} className={`bg-stone-900/60 border ${i === 0 ? 'border-gold-500/30' : 'border-stone-700/60'} rounded-2xl p-5`}>
+              <p className="text-stone-400 text-xs uppercase tracking-wider mb-1">{kpi.label}</p>
+              <p className="font-data text-2xl font-semibold text-stone-100">{kpi.value}</p>
+              {kpi.change && <p className={`text-sm font-medium mt-1 ${kpi.change.direction === "up" ? "text-terracotta-400" : "text-gold-400"}`}>{kpi.change.direction === "up" ? "↗" : "↘"} {kpi.change.pct}%</p>}
             </div>
           ))}
         </div>
       )}
 
-      {/* Key Insight Banner */}
-      {!loading && !noForecasts && (
-        <KeyInsight displayRate={displayRate} sevenDayChange={sevenDayChange} accuracy={accuracy} />
-      )}
+      {!loading && !noForecasts && <KeyInsight displayRate={displayRate} sevenDayChange={sevenDayChange} accuracy={accuracy} />}
 
-      {/* Forecast Outlook + When to Act */}
       {!loading && !noForecasts && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <ForecastOutlook forecast1d={forecast1d} forecast7d={forecast7d} forecast30d={forecast30d} />
-          <WhenToAct nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} displayRate={displayRate} />
+          <WhenToAct nextDayChange={nextDayChange} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} displayRate={displayRate} forecast1d={forecast1d} forecast7d={forecast7d} forecast30d={forecast30d} />
         </div>
       )}
 
-      {/* Who This Affects */}
       {!loading && !noForecasts && (
-        <WhoThisAffects displayRate={displayRate} sevenDayChange={sevenDayChange} />
+        <DecisionImpact displayRate={displayRate} sevenDayChange={sevenDayChange} thirtyDayChange={thirtyDayChange} forecast7d={forecast7d} forecast30d={forecast30d} />
       )}
 
-      {/* Rate Stats + Accuracy */}
+      {!loading && !noForecasts && <WhoThisAffects displayRate={displayRate} sevenDayChange={sevenDayChange} />}
+
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <RateStats stats={rateStats} />
@@ -500,29 +667,24 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Trust Chart + History */}
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {history?.length > 30 && <TrustChart history={history} forecasts={forecast7d || forecasts} />}
-          <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+          {history?.length > 30 && <TrustChart history={history} forecasts={forecast7d || forecasts} historicalForecasts={historicalForecasts} />}
+          <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-slate-300">Historical trends</h3>
-              <Link to="/history" className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition">
-                View full history <ArrowRight className="w-3 h-3" />
-              </Link>
+              <h3 className="text-sm font-semibold text-stone-300">Historical trends</h3>
+              <Link to="/history" className="text-xs text-gold-400 hover:text-gold-300 flex items-center gap-1 transition">View full history <ArrowRight className="w-3 h-3" /></Link>
             </div>
             <HistoryChart history={history} loading={loading} forecasts={forecasts} />
           </div>
         </div>
       )}
 
-      {/* Quick FAQ */}
       {!loading && <QuickFAQ />}
 
-      {/* Disclaimer */}
       <div className="bg-amber-900/20 border-l-4 border-amber-500 rounded-xl p-4 flex gap-3">
         <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-        <p className="text-amber-200/80 text-sm">Forecasts are for informational purposes. Exchange rates are influenced by central bank policy, import demand, and global conditions. Past accuracy does not guarantee future results.</p>
+        <p className="text-amber-200/80 text-sm">Forecasts are for informational purposes only — not financial advice. Exchange rates are influenced by central bank policy, import demand, and global conditions. Past accuracy does not guarantee future results.</p>
       </div>
     </div>
   );

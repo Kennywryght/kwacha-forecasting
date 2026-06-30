@@ -100,31 +100,32 @@ export default function Home() {
   return (
     <div className="min-h-screen">
       {/* HERO */}
-      <section className="border-b border-slate-800">
+      <section className="border-b border-stone-900">
         <div className="max-w-7xl mx-auto px-6 py-16 lg:py-24">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-              <div className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-4 py-2 rounded-full mb-6 text-sm font-medium">
-                <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+              <div className="inline-flex items-center gap-2 bg-gold-500/10 border border-gold-500/20 text-gold-400 px-4 py-2 rounded-full mb-6 text-sm font-medium">
+                <span className="w-2 h-2 bg-gold-400 rounded-full animate-pulse"></span>
                 Live MWK/USD • Malawi Kwacha
               </div>
-              <h1 className="text-4xl lg:text-6xl font-bold leading-tight mb-6">
-                Kwacha<span className="text-emerald-400">Cast</span>
+              <h1 className="font-display text-4xl lg:text-6xl font-semibold leading-tight mb-6 text-stone-100">
+                Kwacha<span className="text-gold-400">Cast</span>
               </h1>
-              <p className="text-slate-400 text-lg leading-relaxed mb-8">
+              <p className="text-stone-400 text-lg leading-relaxed mb-6 max-w-lg">
                 Know where the Kwacha is heading. Get daily exchange rate forecasts 
                 powered by AI, built specifically for Malawi.
               </p>
+              <div className="rate-wave-divider w-40 mb-8" />
               <div className="flex flex-wrap gap-4">
-                <Link to="/dashboard" className="bg-emerald-600 hover:bg-emerald-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
+                <Link to="/dashboard" className="bg-gold-400 hover:bg-gold-300 text-ink-950 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
                   {t('openDashboard', { default: 'Open dashboard' })} <ArrowRight className="w-4 h-4" />
                 </Link>
-                <Link to="/about" className="border border-slate-600 hover:border-slate-400 transition px-6 py-3 rounded-xl font-semibold">
+                <Link to="/about" className="border border-stone-600 hover:border-stone-400 text-stone-200 transition px-6 py-3 rounded-xl font-semibold">
                   {t('learnMore', { default: 'Learn more' })}
                 </Link>
                 {/* PWA Install Button - Gray */}
                 {isInstallable && (
-                  <button onClick={handleInstall} className="bg-slate-600 hover:bg-slate-500 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
+                  <button onClick={handleInstall} className="bg-stone-700 hover:bg-stone-600 text-stone-100 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
                     <Download className="w-4 h-4" /> {t('installApp', { default: 'Install App' })}
                   </button>
                 )}
@@ -132,33 +133,33 @@ export default function Home() {
             </div>
 
             {/* LIVE RATE CARD - ENHANCED */}
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 shadow-2xl">
+            <div className="bg-ink-900 border border-stone-700 rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
-                <p className="text-slate-400 text-sm uppercase tracking-wider">{t('liveExchangeRate', { default: 'Live exchange rate' })}</p>
-                <button onClick={fetchLiveRate} className="text-slate-500 hover:text-white transition" title="Refresh">
+                <p className="text-stone-400 text-sm uppercase tracking-wider">{t('liveExchangeRate', { default: 'Live exchange rate' })}</p>
+                <button onClick={fetchLiveRate} className="text-stone-500 hover:text-stone-100 transition" title="Refresh">
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 </button>
               </div>
               
               {loading ? (
                 <div className="animate-pulse space-y-3">
-                  <div className="h-14 bg-slate-800 rounded w-48"></div>
-                  <div className="h-4 bg-slate-800 rounded w-32"></div>
-                  <div className="h-4 bg-slate-800 rounded w-40"></div>
+                  <div className="h-14 bg-stone-900 rounded w-48"></div>
+                  <div className="h-4 bg-stone-900 rounded w-32"></div>
+                  <div className="h-4 bg-stone-900 rounded w-40"></div>
                 </div>
               ) : error && !liveRate ? (
-                <div className="text-red-400 text-sm">{error}</div>
+                <div className="text-terracotta-400 text-sm">{error}</div>
               ) : (
                 <>
                   {/* Rate Display with Trend Indicator */}
                   <div className="flex items-baseline gap-3 mb-2">
-                    <h2 className="text-5xl lg:text-6xl font-bold text-white">
+                    <h2 className="font-data text-5xl lg:text-6xl font-semibold text-stone-100">
                       {liveRate?.rate?.toFixed(2)}
                     </h2>
                     {rateChange && (
                       <div className={`flex items-center gap-1 text-sm font-semibold ${
-                        rateChange.direction === 'up' ? 'text-red-400' : 
-                        rateChange.direction === 'down' ? 'text-emerald-400' : 'text-slate-400'
+                        rateChange.direction === 'up' ? 'text-terracotta-400' : 
+                        rateChange.direction === 'down' ? 'text-gold-400' : 'text-stone-400'
                       }`}>
                         {rateChange.direction === 'up' && <ArrowUpRight className="w-4 h-4" />}
                         {rateChange.direction === 'down' && <ArrowDownRight className="w-4 h-4" />}
@@ -171,14 +172,14 @@ export default function Home() {
                     )}
                   </div>
                   
-                  <p className="text-lg text-slate-300 mb-4">MWK per USD</p>
+                  <p className="text-lg text-stone-300 mb-4">MWK per USD</p>
                   
                   {/* Rate Change Details */}
                   {rateChange && (
                     <div className={`mb-4 p-3 rounded-xl text-xs font-medium ${
-                      rateChange.direction === 'up' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
-                      rateChange.direction === 'down' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' :
-                      'bg-slate-800 border border-slate-700 text-slate-400'
+                      rateChange.direction === 'up' ? 'bg-terracotta-500/10 border border-terracotta-500/20 text-terracotta-400' :
+                      rateChange.direction === 'down' ? 'bg-gold-500/10 border border-gold-500/20 text-gold-400' :
+                      'bg-stone-900 border border-stone-700 text-stone-400'
                     }`}>
                       {rateChange.direction === 'up' && '↗ Kwacha weakening — rate has increased since last update'}
                       {rateChange.direction === 'down' && '↘ Kwacha strengthening — rate has decreased since last update'}
@@ -186,11 +187,11 @@ export default function Home() {
                     </div>
                   )}
                   
-                  <div className="space-y-2 text-sm text-slate-400">
-                    <p>{t('source', { default: 'Source' })}: <span className="text-slate-300">{liveRate?.source || '—'}</span></p>
-                    <p>{t('updated', { default: 'Updated' })}: <span className="text-slate-300">{liveRate?.date || '—'}</span></p>
+                  <div className="space-y-2 text-sm text-stone-400">
+                    <p>{t('source', { default: 'Source' })}: <span className="text-stone-300">{liveRate?.source || '—'}</span></p>
+                    <p>{t('updated', { default: 'Updated' })}: <span className="text-stone-300">{liveRate?.date || '—'}</span></p>
                   </div>
-                  <p className="text-xs text-slate-500 mt-4">
+                  <p className="text-xs text-stone-500 mt-4">
                     {t('rateDisclaimer', { default: 'Rate sourced from open.er-api.com. For reference only.' })}
                   </p>
                 </>
@@ -204,8 +205,8 @@ export default function Home() {
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4">{t('whatYouCanDo', { default: 'What you can do' })}</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
+            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-stone-100 mb-4">{t('whatYouCanDo', { default: 'What you can do' })}</h2>
+            <p className="text-stone-400 max-w-2xl mx-auto">
               {t('simpleTools', { default: 'Simple tools to help you make better decisions about the Kwacha.' })}
             </p>
           </div>
@@ -213,10 +214,10 @@ export default function Home() {
             {features.map((feature, idx) => {
               const Icon = feature.icon
               return (
-                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-6 hover:border-emerald-500/30 transition-all group">
-                  <Icon className="w-10 h-10 text-emerald-500 mb-4 group-hover:scale-110 transition" />
-                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-                  <p className="text-slate-400 text-sm leading-relaxed">{feature.description}</p>
+                <div key={idx} className="bg-ink-900 border border-stone-900 rounded-2xl p-6 hover:border-gold-500/30 transition-all group">
+                  <Icon className="w-10 h-10 text-gold-500 mb-4 group-hover:scale-110 transition" />
+                  <h3 className="text-lg font-semibold text-stone-100 mb-2">{feature.title}</h3>
+                  <p className="text-stone-400 text-sm leading-relaxed">{feature.description}</p>
                 </div>
               )
             })}
@@ -225,11 +226,11 @@ export default function Home() {
       </section>
 
       {/* TRUST SECTION */}
-      <section className="bg-slate-900 border-y border-slate-800 py-20">
+      <section className="bg-ink-900 border-y border-stone-900 py-20">
         <div className="max-w-7xl mx-auto px-6">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-white mb-4">{t('whyTrust', { default: 'Why trust KwachaCast?' })}</h2>
-            <p className="text-slate-400 max-w-2xl mx-auto">
+            <h2 className="font-display text-3xl font-semibold text-stone-100 mb-4">{t('whyTrust', { default: 'Why trust KwachaCast?' })}</h2>
+            <p className="text-stone-400 max-w-2xl mx-auto">
               {t('builtWithRealData', { default: 'Built with real data and proven methods to give you reliable forecasts.' })}
             </p>
           </div>
@@ -240,29 +241,29 @@ export default function Home() {
               { value: t('daily', { default: 'Daily' }), label: t('forecastUpdates', { default: 'Forecast updates' }) },
             ].map((stat, i) => (
               <div key={i}>
-                <p className="text-4xl font-bold text-emerald-400">{stat.value}</p>
-                <p className="text-slate-400 mt-2">{stat.label}</p>
+                <p className="font-data text-4xl font-semibold text-gold-400">{stat.value}</p>
+                <p className="text-stone-400 mt-2">{stat.label}</p>
               </div>
             ))}
           </div>
           
           {/* Mobile App Download Section */}
-          <div className="mt-12 bg-slate-800/60 rounded-2xl p-8 border border-slate-700/60 text-center">
-            <Smartphone className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
-            <h3 className="text-2xl font-bold text-white mb-2">{t('getTheApp', { default: 'Get the App' })}</h3>
-            <p className="text-slate-400 mb-6 max-w-lg mx-auto">
+          <div className="mt-12 bg-stone-900/60 rounded-2xl p-8 border border-stone-700/60 text-center">
+            <Smartphone className="w-12 h-12 text-gold-400 mx-auto mb-4" />
+            <h3 className="text-2xl font-bold text-stone-100 mb-2">{t('getTheApp', { default: 'Get the App' })}</h3>
+            <p className="text-stone-400 mb-6 max-w-lg mx-auto">
               {t('installOnPhone', { default: 'Install KwachaCast on your phone for quick access. No app store needed — just tap the button below.' })}
             </p>
             {isInstallable ? (
-              <button onClick={handleInstall} className="bg-slate-600 hover:bg-slate-500 text-white px-8 py-4 rounded-xl font-bold text-lg transition inline-flex items-center gap-2">
+              <button onClick={handleInstall} className="bg-stone-600 hover:bg-stone-500 text-stone-100 px-8 py-4 rounded-xl font-bold text-lg transition inline-flex items-center gap-2">
                 <Download className="w-5 h-5" /> {t('installNow', { default: 'Install KwachaCast' })}
               </button>
             ) : (
               <div className="space-y-3">
-                <p className="text-slate-400 text-sm">
+                <p className="text-stone-400 text-sm">
                   {t('howToInstall', { default: 'To install: open this site in Chrome, tap the menu (⋮), and select "Add to Home Screen".' })}
                 </p>
-                <p className="text-slate-500 text-xs">
+                <p className="text-stone-500 text-xs">
                   {t('noAppStore', { default: 'No app store required. The app works offline and updates automatically.' })}
                 </p>
               </div>
@@ -274,11 +275,11 @@ export default function Home() {
       {/* CTA */}
       <section className="py-20">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">{t('readyToSee', { default: 'Ready to see the forecasts?' })}</h2>
-          <p className="text-slate-400 mb-8">
+          <h2 className="font-display text-3xl font-semibold text-stone-100 mb-4">{t('readyToSee', { default: 'Ready to see the forecasts?' })}</h2>
+          <p className="text-stone-400 mb-8">
             {t('viewPredictions', { default: 'View daily, weekly, and monthly predictions for the Malawi Kwacha.' })}
           </p>
-          <Link to="/dashboard" className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-4 rounded-xl font-semibold text-lg transition inline-flex items-center gap-2">
+          <Link to="/dashboard" className="bg-gold-400 hover:bg-gold-300 text-ink-950 px-8 py-4 rounded-xl font-semibold text-lg transition inline-flex items-center gap-2">
             {t('openDashboard', { default: 'Open dashboard' })} <ArrowRight className="w-5 h-5" />
           </Link>
         </div>

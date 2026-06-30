@@ -19,13 +19,13 @@ import { Calendar, TrendingUp, Database, Clock, Activity, ArrowUp, ArrowDown, Ba
 
 function StatCard({ title, value, icon: Icon, subtitle }) {
   return (
-    <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 backdrop-blur">
+    <div className="bg-stone-900/60 border border-stone-700/60 rounded-xl p-4 backdrop-blur">
       <div className="flex items-center gap-2 mb-2">
-        {Icon && <Icon className="w-4 h-4 text-emerald-400" />}
-        <p className="text-xs text-slate-400 uppercase tracking-wider">{title}</p>
+        {Icon && <Icon className="w-4 h-4 text-gold-400" />}
+        <p className="text-xs text-stone-400 uppercase tracking-wider">{title}</p>
       </div>
-      <p className="text-xl font-bold text-white">{value}</p>
-      {subtitle && <p className="text-xs text-slate-500 mt-1">{subtitle}</p>}
+      <p className="font-data text-xl font-semibold text-stone-100">{value}</p>
+      {subtitle && <p className="text-xs text-stone-500 mt-1">{subtitle}</p>}
     </div>
   );
 }
@@ -139,13 +139,14 @@ export default function History() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-white">Exchange rate history</h1>
-        <p className="text-slate-400 text-sm mt-1">Historical MWK/USD rates from 2013 to present</p>
+        <h1 className="font-display text-2xl sm:text-3xl font-semibold text-stone-100">Exchange rate history</h1>
+        <p className="text-stone-400 text-sm mt-1">Historical MWK/USD rates from 2013 to present</p>
       </div>
+      <div className="rate-wave-divider" />
 
       {/* Quick select */}
-      <div className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-4 flex items-center gap-4 flex-wrap backdrop-blur">
-        <div className="flex items-center gap-2 text-slate-300">
+      <div className="bg-stone-900/60 border border-stone-700/60 rounded-xl p-4 flex items-center gap-4 flex-wrap backdrop-blur">
+        <div className="flex items-center gap-2 text-stone-300">
           <Calendar size={18} />
           <span className="font-medium text-sm">Time range:</span>
         </div>
@@ -156,8 +157,8 @@ export default function History() {
               onClick={() => handleQuickRange(range)}
               className={`px-3 py-1.5 rounded-lg font-medium text-xs transition-colors ${
                 timeRange === range
-                  ? "bg-emerald-600 text-white"
-                  : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                  ? "bg-gold-400 text-ink-950"
+                  : "bg-stone-700 text-stone-300 hover:bg-stone-600"
               }`}
             >
               {range === "all" ? "All time" : range.toUpperCase()}
@@ -169,17 +170,17 @@ export default function History() {
       {/* Manual date inputs */}
       <div className="flex gap-3 items-end flex-wrap">
         <div>
-          <label className="text-slate-400 text-xs block mb-1">Start date</label>
+          <label className="text-stone-400 text-xs block mb-1">Start date</label>
           <input type="date" value={start} onChange={(e) => setStart(e.target.value)}
-            className="bg-slate-700 text-white text-sm px-3 py-2 rounded-lg border border-slate-600" />
+            className="bg-stone-700 text-stone-100 text-sm px-3 py-2 rounded-lg border border-stone-600" />
         </div>
         <div>
-          <label className="text-slate-400 text-xs block mb-1">End date</label>
+          <label className="text-stone-400 text-xs block mb-1">End date</label>
           <input type="date" value={end} onChange={(e) => setEnd(e.target.value)}
-            className="bg-slate-700 text-white text-sm px-3 py-2 rounded-lg border border-slate-600" />
+            className="bg-stone-700 text-stone-100 text-sm px-3 py-2 rounded-lg border border-stone-600" />
         </div>
         <button onClick={fetch} disabled={loading}
-          className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition">
+          className="bg-gold-400 hover:bg-gold-300 disabled:bg-stone-700 disabled:text-stone-400 text-ink-950 px-4 py-2 rounded-lg text-sm font-semibold transition">
           {loading ? "Loading..." : "Load"}
         </button>
         {stats && (
@@ -187,8 +188,8 @@ export default function History() {
             onClick={() => setShowVolatility(!showVolatility)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
               showVolatility 
-                ? "bg-purple-600 hover:bg-purple-500 text-white" 
-                : "bg-slate-700 hover:bg-slate-600 text-slate-300"
+                ? "bg-purple-600 hover:bg-purple-500 text-stone-100" 
+                : "bg-stone-700 hover:bg-stone-600 text-stone-300"
             }`}
           >
             <Activity className="w-4 h-4" />
@@ -197,11 +198,11 @@ export default function History() {
         )}
       </div>
 
-      {error && (<div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 text-red-400 text-sm">{error}</div>)}
+      {error && (<div className="bg-terracotta-500/10 border border-terracotta-500/30 rounded-xl p-4 text-terracotta-400 text-sm">{error}</div>)}
 
       {loading && (
-        <div className="bg-slate-800/60 rounded-2xl h-64 border border-slate-700/60 animate-pulse flex items-center justify-center">
-          <p className="text-slate-400">Loading data...</p>
+        <div className="bg-stone-900/60 rounded-2xl h-64 border border-stone-700/60 animate-pulse flex items-center justify-center">
+          <p className="text-stone-400">Loading data...</p>
         </div>
       )}
 
@@ -222,39 +223,39 @@ export default function History() {
 
       {/* Main Chart */}
       {data && !loading && data.data?.length > 0 && (
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
+        <div className="bg-stone-900/60 border border-stone-700/60 rounded-2xl p-5 backdrop-blur">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Rate chart</h3>
-            <div className="flex items-center gap-4 text-xs text-slate-400">
+            <h3 className="text-sm font-semibold text-stone-300 uppercase tracking-wider">Rate chart</h3>
+            <div className="flex items-center gap-4 text-xs text-stone-400">
               <div className="flex items-center gap-1">
                 <div className="w-3 h-3 bg-blue-500 rounded-sm"></div>
                 <span>MWK/USD Rate</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-0.5 bg-emerald-400 w-6"></div>
+                <div className="w-3 h-0.5 bg-gold-400 w-6"></div>
                 <span>Average: {stats.avg}</span>
               </div>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={350}>
             <ComposedChart data={data.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
               <XAxis 
                 dataKey="date" 
-                tick={{ fill: "#94a3b8", fontSize: 11 }} 
+                tick={{ fill: "#8A968D", fontSize: 11 }} 
                 interval={Math.floor(data.data.length / 10)} 
               />
               <YAxis 
-                tick={{ fill: "#94a3b8", fontSize: 11 }} 
+                tick={{ fill: "#8A968D", fontSize: 11 }} 
                 domain={['auto', 'auto']} 
                 tickFormatter={(v) => v.toFixed(0)} 
               />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: "#1e293b", 
+                  backgroundColor: "#1A211D", 
                   borderRadius: 8, 
-                  border: '1px solid #475569', 
-                  color: '#e2e8f0', 
+                  border: '1px solid #3D4A41', 
+                  color: '#D2D8D2', 
                   fontSize: 12 
                 }}
                 formatter={(v, name) => {
@@ -266,17 +267,17 @@ export default function History() {
               <Area 
                 type="monotone" 
                 dataKey="rate" 
-                stroke="#3b82f6" 
-                fill="#3b82f6" 
+                stroke="#E0AC4F" 
+                fill="#E0AC4F" 
                 fillOpacity={0.3} 
                 name="rate"
               />
               <ReferenceLine 
                 y={Number(stats.avg)} 
-                stroke="#34d399" 
+                stroke="#6FAE82" 
                 strokeDasharray="5 5" 
                 strokeWidth={1}
-                label={{ value: `Avg: ${stats.avg}`, fill: '#34d399', fontSize: 11, position: 'right' }}
+                label={{ value: `Avg: ${stats.avg}`, fill: '#6FAE82', fontSize: 11, position: 'right' }}
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -285,42 +286,42 @@ export default function History() {
 
       {/* Volatility Chart - FIXED */}
       {data && !loading && volatilityData && showVolatility && (
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
+        <div className="bg-stone-900/60 border border-stone-700/60 rounded-2xl p-5 backdrop-blur">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider">Daily volatility</h3>
-            <div className="flex items-center gap-4 text-xs text-slate-400">
+            <h3 className="text-sm font-semibold text-stone-300 uppercase tracking-wider">Daily volatility</h3>
+            <div className="flex items-center gap-4 text-xs text-stone-400">
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-red-400 rounded-sm"></div>
+                <div className="w-3 h-3 bg-terracotta-400 rounded-sm"></div>
                 <span>Rate weakening (↗)</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-emerald-400 rounded-sm"></div>
+                <div className="w-3 h-3 bg-gold-400 rounded-sm"></div>
                 <span>Rate strengthening (↘)</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-3 h-3 bg-slate-500 rounded-sm"></div>
+                <div className="w-3 h-3 bg-stone-500 rounded-sm"></div>
                 <span>No change</span>
               </div>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={250}>
             <BarChart data={volatilityData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
               <XAxis 
                 dataKey="date" 
-                tick={{ fill: "#94a3b8", fontSize: 10 }} 
+                tick={{ fill: "#8A968D", fontSize: 10 }} 
                 interval={Math.floor(volatilityData.length / 8)} 
               />
               <YAxis 
-                tick={{ fill: "#94a3b8", fontSize: 10 }} 
+                tick={{ fill: "#8A968D", fontSize: 10 }} 
                 tickFormatter={(v) => v.toFixed(1)}
               />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: "#1e293b", 
+                  backgroundColor: "#1A211D", 
                   borderRadius: 8, 
-                  border: '1px solid #475569', 
-                  color: '#e2e8f0', 
+                  border: '1px solid #3D4A41', 
+                  color: '#D2D8D2', 
                   fontSize: 12 
                 }}
                 formatter={(v, name) => {
@@ -342,39 +343,39 @@ export default function History() {
                 {volatilityData.map((entry, index) => {
                   let color;
                   if (entry.change > 0) {
-                    color = '#ef4444'; // Red for weakening
+                    color = '#D2693C'; // Terracotta for weakening
                   } else if (entry.change < 0) {
-                    color = '#34d399'; // Green for strengthening
+                    color = '#6FAE82'; // Sage for strengthening
                   } else {
-                    color = '#64748b'; // Gray for no change
+                    color = '#5C6B62'; // Gray for no change
                   }
                   return <Cell key={`cell-${index}`} fill={color} fillOpacity={0.7} />;
                 })}
               </Bar>
-              <ReferenceLine y={0} stroke="#475569" />
+              <ReferenceLine y={0} stroke="#3D4A41" />
             </BarChart>
           </ResponsiveContainer>
           
           {/* Volatility Summary */}
           {stats && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-              <div className="bg-slate-700/40 rounded-lg p-3">
-                <p className="text-slate-400 text-xs">Avg daily change</p>
-                <p className={`text-sm font-semibold ${Number(stats.avgDailyChange) > 0 ? 'text-red-400' : Number(stats.avgDailyChange) < 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+              <div className="bg-stone-700/40 rounded-lg p-3">
+                <p className="text-stone-400 text-xs">Avg daily change</p>
+                <p className={`text-sm font-semibold ${Number(stats.avgDailyChange) > 0 ? 'text-terracotta-400' : Number(stats.avgDailyChange) < 0 ? 'text-gold-400' : 'text-stone-300'}`}>
                   {Number(stats.avgDailyChange) > 0 ? '+' : ''}{stats.avgDailyChange} MWK
                 </p>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-3">
-                <p className="text-slate-400 text-xs">Max daily increase</p>
-                <p className="text-sm font-semibold text-red-400">+{stats.maxDailyIncrease} MWK</p>
+              <div className="bg-stone-700/40 rounded-lg p-3">
+                <p className="text-stone-400 text-xs">Max daily increase</p>
+                <p className="text-sm font-semibold text-terracotta-400">+{stats.maxDailyIncrease} MWK</p>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-3">
-                <p className="text-slate-400 text-xs">Max daily decrease</p>
-                <p className="text-sm font-semibold text-emerald-400">{stats.maxDailyDecrease} MWK</p>
+              <div className="bg-stone-700/40 rounded-lg p-3">
+                <p className="text-stone-400 text-xs">Max daily decrease</p>
+                <p className="text-sm font-semibold text-gold-400">{stats.maxDailyDecrease} MWK</p>
               </div>
-              <div className="bg-slate-700/40 rounded-lg p-3">
-                <p className="text-slate-400 text-xs">Overall change</p>
-                <p className={`text-sm font-semibold ${Number(stats.change) > 0 ? 'text-red-400' : Number(stats.change) < 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+              <div className="bg-stone-700/40 rounded-lg p-3">
+                <p className="text-stone-400 text-xs">Overall change</p>
+                <p className={`text-sm font-semibold ${Number(stats.change) > 0 ? 'text-terracotta-400' : Number(stats.change) < 0 ? 'text-gold-400' : 'text-stone-300'}`}>
                   {Number(stats.change) > 0 ? '+' : ''}{stats.change} MWK ({Number(stats.changePct) > 0 ? '+' : ''}{stats.changePct}%)
                 </p>
               </div>
@@ -385,37 +386,37 @@ export default function History() {
 
       {/* Rate Distribution Summary */}
       {data && !loading && stats && (
-        <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
-          <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <div className="bg-stone-900/60 border border-stone-700/60 rounded-2xl p-5 backdrop-blur">
+          <h3 className="text-sm font-semibold text-stone-300 uppercase tracking-wider mb-4 flex items-center gap-2">
             <Info className="w-4 h-4 text-blue-400" />
             Rate summary
           </h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <p className="text-slate-400 text-xs">Highest rate</p>
-              <p className="text-white font-semibold">MWK {stats.max}</p>
+            <div className="bg-stone-700/40 rounded-lg p-3">
+              <p className="text-stone-400 text-xs">Highest rate</p>
+              <p className="text-stone-100 font-semibold">MWK {stats.max}</p>
             </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <p className="text-slate-400 text-xs">Lowest rate</p>
-              <p className="text-white font-semibold">MWK {stats.min}</p>
+            <div className="bg-stone-700/40 rounded-lg p-3">
+              <p className="text-stone-400 text-xs">Lowest rate</p>
+              <p className="text-stone-100 font-semibold">MWK {stats.min}</p>
             </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <p className="text-slate-400 text-xs">Starting rate</p>
-              <p className="text-white font-semibold">MWK {stats.oldest}</p>
+            <div className="bg-stone-700/40 rounded-lg p-3">
+              <p className="text-stone-400 text-xs">Starting rate</p>
+              <p className="text-stone-100 font-semibold">MWK {stats.oldest}</p>
             </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <p className="text-slate-400 text-xs">Ending rate</p>
-              <p className="text-white font-semibold">MWK {stats.latest}</p>
+            <div className="bg-stone-700/40 rounded-lg p-3">
+              <p className="text-stone-400 text-xs">Ending rate</p>
+              <p className="text-stone-100 font-semibold">MWK {stats.latest}</p>
             </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <p className="text-slate-400 text-xs">Total change</p>
-              <p className={`font-semibold ${Number(stats.change) > 0 ? 'text-red-400' : Number(stats.change) < 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+            <div className="bg-stone-700/40 rounded-lg p-3">
+              <p className="text-stone-400 text-xs">Total change</p>
+              <p className={`font-semibold ${Number(stats.change) > 0 ? 'text-terracotta-400' : Number(stats.change) < 0 ? 'text-gold-400' : 'text-stone-300'}`}>
                 {Number(stats.change) > 0 ? '+' : ''}{stats.change} MWK
               </p>
             </div>
-            <div className="bg-slate-700/40 rounded-lg p-3">
-              <p className="text-slate-400 text-xs">% Change</p>
-              <p className={`font-semibold ${Number(stats.changePct) > 0 ? 'text-red-400' : Number(stats.changePct) < 0 ? 'text-emerald-400' : 'text-slate-300'}`}>
+            <div className="bg-stone-700/40 rounded-lg p-3">
+              <p className="text-stone-400 text-xs">% Change</p>
+              <p className={`font-semibold ${Number(stats.changePct) > 0 ? 'text-terracotta-400' : Number(stats.changePct) < 0 ? 'text-gold-400' : 'text-stone-300'}`}>
                 {Number(stats.changePct) > 0 ? '+' : ''}{stats.changePct}%
               </p>
             </div>
@@ -424,17 +425,17 @@ export default function History() {
       )}
 
       {/* About this data */}
-      <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-5 backdrop-blur">
-        <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">About this data</h3>
+      <div className="bg-stone-900/60 border border-stone-700/60 rounded-2xl p-5 backdrop-blur">
+        <h3 className="text-sm font-semibold text-stone-300 uppercase tracking-wider mb-3">About this data</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div>
-            <p className="text-slate-400"><span className="text-slate-300 font-medium">Source:</span> Reserve Bank of Malawi</p>
+            <p className="text-stone-400"><span className="text-stone-300 font-medium">Source:</span> Reserve Bank of Malawi</p>
           </div>
           <div>
-            <p className="text-slate-400"><span className="text-slate-300 font-medium">Period:</span> 2013 – Present</p>
+            <p className="text-stone-400"><span className="text-stone-300 font-medium">Period:</span> 2013 – Present</p>
           </div>
           <div>
-            <p className="text-slate-400"><span className="text-slate-300 font-medium">Updates:</span> Daily (business days)</p>
+            <p className="text-stone-400"><span className="text-stone-300 font-medium">Updates:</span> Daily (business days)</p>
           </div>
         </div>
       </div>
