@@ -27,7 +27,6 @@ def seed_historical_forecasts():
     
     db = SessionLocal()
     try:
-        # Check if already seeded
         existing = db.query(func.count(Forecast.id)).filter(
             Forecast.model_name == "ensemble",
             Forecast.horizon_days == 7
@@ -42,7 +41,6 @@ def seed_historical_forecasts():
         
         today = date.today()
         
-        # Delete old seeded data
         db.query(Forecast).filter(
             Forecast.model_name == "ensemble",
             Forecast.horizon_days == 7
@@ -53,7 +51,6 @@ def seed_historical_forecasts():
         for days_ago in range(30, 0, -1):
             forecast_date_val = today - timedelta(days=days_ago)
             
-            # Get the actual rate for this forecast date
             actual_rate_row = db.query(ExchangeRate).filter(
                 ExchangeRate.date == forecast_date_val
             ).first()
@@ -68,17 +65,12 @@ def seed_historical_forecasts():
             for i in range(7):
                 target = forecast_date_val + timedelta(days=i + 1)
                 
-                # Get actual rate for target date
                 target_rate_row = db.query(ExchangeRate).filter(
                     ExchangeRate.date == target
                 ).first()
                 
                 if target_rate_row:
                     actual_target = target_rate_row.rate
-                    # Create realistic forecast error:
-                    # - Close dates (1-2 days): small error (0.02-0.10%)
-                    # - Medium dates (3-5 days): moderate error (0.10-0.30%)
-                    # - Far dates (6-7 days): larger error (0.20-0.50%)
                     if i <= 1:
                         error_pct = random.uniform(0.02, 0.10)
                     elif i <= 4:
@@ -86,12 +78,10 @@ def seed_historical_forecasts():
                     else:
                         error_pct = random.uniform(0.20, 0.50)
                     
-                    # Random direction (over or under predict)
                     direction = random.choice([-1, 1])
                     error_mwk = actual_target * (error_pct / 100) * direction
                     predicted = actual_target + error_mwk
                     
-                    # Confidence interval proportional to error
                     ci_width = abs(error_mwk) * random.uniform(2.5, 4.0)
                     lower = predicted - ci_width
                     upper = predicted + ci_width
@@ -121,6 +111,58 @@ def seed_historical_forecasts():
         logger.error(f"Error seeding historical forecasts: {e}")
     finally:
         db.close()
+
+
+def auto_train_models():
+    """Train models if they don't exist on startup. Only runs if .pkl files missing."""
+    import os
+    from core.logging_config import get_logger
+    logger = get_logger(__name__)
+    
+    artifacts_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "ml", "artifacts"))
+    os.makedirs(artifacts_dir, exist_ok=True)
+    
+    arima_path = os.path.join(artifacts_dir, "arima.pkl")
+    prophet_path = os.path.join(artifacts_dir, "prophet.pkl")
+    
+    if os.path.exists(arima_path) and os.path.exists(prophet_path):
+        logger.info("✅ Models already exist, skipping training")
+        return
+    
+    logger.info("🚂 No models found - training now (this takes 2-3 minutes)...")
+    
+    try:
+        from ml.pipeline.loader import load_data
+        df = load_data()
+        logger.info(f"📊 Loaded {len(df)} rows for training")
+        
+        if len(df) < 30:
+            logger.warning(f"⚠️ Not enough data: {len(df)} rows (need 30+)")
+            return
+        
+        if not os.path.exists(arima_path):
+            logger.info("Training ARIMA...")
+            from ml.models.arima_model import ARIMAForecaster
+            arima = ARIMAForecaster()
+            arima.fit(df)
+            arima.save(arima_path)
+            logger.info("✅ ARIMA trained and saved")
+        
+        if not os.path.exists(prophet_path):
+            logger.info("Training Prophet...")
+            from ml.models.prophet_model import ProphetForecaster
+            prophet = ProphetForecaster()
+            prophet.fit(df)
+            prophet.save(prophet_path)
+            logger.info("✅ Prophet trained and saved")
+            
+        logger.info("🎉 Model training complete!")
+            
+    except Exception as e:
+        logger.error(f"❌ Auto-training failed: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 def load_models() -> dict:
     from ml.models.arima_model    import ARIMAForecaster
