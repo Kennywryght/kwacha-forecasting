@@ -56,29 +56,35 @@ def _safe_date(d):
 
 
 def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
+    """
+    Adjust forecast dates to ensure they start from start_date and have exactly horizon points.
+    Generates sequential dates from start_date and maps predictions to them.
+    """
     dates = raw.get("dates", [])
     predicted = raw.get("predicted", [])
     lower = raw.get("lower_bound", []) or raw.get("lower", [])
     upper = raw.get("upper_bound", []) or raw.get("upper", [])
 
+    # Normalize to lists
     if hasattr(predicted, 'tolist'):
         predicted = predicted.tolist()
     elif hasattr(predicted, 'values'):
         predicted = predicted.values.tolist()
     predicted = list(predicted) if not isinstance(predicted, list) else predicted
-    
+
     if hasattr(lower, 'tolist'):
         lower = lower.tolist()
     elif hasattr(lower, 'values'):
         lower = lower.values.tolist()
     lower = list(lower) if not isinstance(lower, list) else lower
-    
+
     if hasattr(upper, 'tolist'):
         upper = upper.tolist()
     elif hasattr(upper, 'values'):
         upper = upper.values.tolist()
     upper = list(upper) if not isinstance(upper, list) else upper
 
+    # Parse all dates to date objects
     clean_dates = []
     for d in dates:
         if isinstance(d, str):
@@ -90,68 +96,79 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
         else:
             clean_dates.append(d)
 
-    # FIX: Filter dates to only include dates from start_date onwards
-    filtered_indices = []
-    for i, d in enumerate(clean_dates):
-        if d >= start_date:
-            filtered_indices.append(i)
-    
-    if filtered_indices:
-        clean_dates = [clean_dates[i] for i in filtered_indices]
-        predicted = [predicted[i] for i in filtered_indices if i < len(predicted)]
-        lower = [lower[i] for i in filtered_indices if i < len(lower)]
-        upper = [upper[i] for i in filtered_indices if i < len(upper)]
+    # Build output: generate exact horizon dates starting from start_date
+    new_dates = []
+    new_predicted = []
+    new_lower = []
+    new_upper = []
 
-    while len(lower) < len(predicted):
-        lower.append(None)
-    while len(upper) < len(predicted):
-        upper.append(None)
+    for i in range(horizon):
+        target_date = start_date + timedelta(days=i)
 
-    n = min(horizon, len(clean_dates), len(predicted))
-    
-    if n > 0:
-        return {
-            "dates": clean_dates[:n],
-            "predicted": [float(p) if p is not None else 0.0 for p in predicted[:n]],
-            "lower_bound": [float(l) if l is not None else None for l in lower[:n]],
-            "upper_bound": [float(u) if u is not None else None for u in upper[:n]],
-        }
-    return {"dates": [], "predicted": [], "lower_bound": [], "upper_bound": []}
+        # Try to find matching date in model output
+        if target_date in clean_dates:
+            idx = clean_dates.index(target_date)
+        elif len(clean_dates) > i:
+            # Use the i-th prediction if dates don't match exactly
+            idx = i
+        elif len(predicted) > 0:
+            # Use last available prediction as fallback
+            idx = len(predicted) - 1
+        else:
+            continue
+
+        new_dates.append(target_date)
+        new_predicted.append(
+            float(predicted[idx]) if idx < len(predicted) and predicted[idx] is not None else 0.0
+        )
+        new_lower.append(
+            float(lower[idx]) if idx < len(lower) and lower[idx] is not None else None
+        )
+        new_upper.append(
+            float(upper[idx]) if idx < len(upper) and upper[idx] is not None else None
+        )
+
+    return {
+        "dates": new_dates,
+        "predicted": new_predicted,
+        "lower_bound": new_lower,
+        "upper_bound": new_upper,
+    }
 
 
 def _predict_ml_model(model_data: dict, horizon: int) -> dict:
     from db.database import SessionLocal
     from db.models import ExchangeRate
-    
+
     model = model_data.get("model")
     feature_cols = model_data.get("features", [])
-    
+
     if model is None:
         raise ValueError("No model loaded")
-    
+
     db = SessionLocal()
     rates = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).limit(90).all()
     db.close()
-    
+
     if len(rates) < 30:
         raise ValueError("Not enough data for ML prediction")
-    
+
     recent_df = pd.DataFrame([{'date': r.date, 'rate': float(r.rate)} for r in rates])
     recent_df['date'] = pd.to_datetime(recent_df['date'])
     recent_df = recent_df.sort_values('date')
-    
+
     from ml.pipeline.feature_engineer import engineer_features
     df_eng = engineer_features(recent_df, verbose=False)
-    
+
     available_features = [c for c in feature_cols if c in df_eng.columns]
     if not available_features:
         raise ValueError("No matching features found")
-    
+
     last_features = df_eng[available_features].iloc[-1:].fillna(0)
-    
+
     predictions = []
     current_features = last_features.copy()
-    
+
     for i in range(horizon):
         pred = model.predict(current_features)[0]
         predictions.append(float(pred))
@@ -159,14 +176,14 @@ def _predict_ml_model(model_data: dict, horizon: int) -> dict:
             for col in available_features:
                 if 'lag' in col or 'momentum' in col or 'rolling' in col:
                     current_features[col] = current_features[col].values[0] * 0.999
-    
+
     today = date.today()
     dates = [(today + timedelta(days=i+1)) for i in range(horizon)]
-    
+
     std_pred = np.std(predictions) if len(predictions) > 1 else abs(predictions[0]) * 0.01
     lower = [p - 1.96 * std_pred for p in predictions]
     upper = [p + 1.96 * std_pred for p in predictions]
-    
+
     return {
         "dates": dates,
         "predicted": predictions,
@@ -181,20 +198,23 @@ def _predict_ml_model(model_data: dict, horizon: int) -> dict:
 
 def _run_generate(horizon: int):
     global _generation_state
-    
+
     _generation_state.update({
         "in_progress": True, "started_at": datetime.now(),
         "horizon": horizon, "error": None,
     })
-    
+
     db = SessionLocal()
     try:
         today = date.today()
         tomorrow = today + timedelta(days=1)
 
         logger.info(f"📊 Generating {horizon}-day forecasts using pre-trained models")
-        
+
+        # Models to include in ensemble (excluding prophet which gives inflated predictions)
+        ensemble_model_names = ["arima", "arimax", "xgboost", "lightgbm"]
         generated_models = []
+
         for model_name, model in _models.items():
             if model_name == "ensemble":
                 continue
@@ -203,12 +223,13 @@ def _run_generate(horizon: int):
                 if not is_fitted:
                     logger.warning(f"{model_name} not fitted — skipping")
                     continue
-                
+
                 logger.info(f"  Generating {model_name} forecast...")
-                
+
                 if model_name in ["xgboost", "lightgbm"]:
                     raw = _predict_ml_model(model, horizon)
                 elif model_name == "prophet":
+                    # Still generate prophet for individual viewing, but exclude from ensemble
                     if hasattr(model, 'predict'):
                         raw = model.predict(horizon)
                     else:
@@ -235,31 +256,35 @@ def _run_generate(horizon: int):
             except Exception as e:
                 logger.error(f"  ❌ {model_name} generation failed: {e}")
 
-        # Ensemble
-        if len(generated_models) >= 2:
+        # Ensemble - only use arima, arimax, xgboost, lightgbm (exclude prophet)
+        ensemble_candidates = [m for m in generated_models if m in ensemble_model_names]
+        if len(ensemble_candidates) >= 2:
             try:
-                logger.info("  Generating ensemble forecast...")
+                logger.info(f"  Generating ensemble forecast from: {ensemble_candidates}")
                 model_forecasts = {}
-                for name in generated_models:
+                for name in ensemble_candidates:
                     recs = crud.get_latest_forecasts(db, name, horizon)
                     if recs and recs[0].forecast_date == today:
                         model_forecasts[name] = recs
 
                 if model_forecasts:
-                    date_sets = [set(r.target_date for r in recs) for recs in model_forecasts.values()]
-                    common_dates = sorted(set.intersection(*date_sets))
-                    # FIX: Only include dates from tomorrow onwards
-                    common_dates = [d for d in common_dates if d >= tomorrow][:horizon]
+                    # Get all target dates from the first model
+                    first_model = list(model_forecasts.keys())[0]
+                    all_dates = sorted([r.target_date for r in model_forecasts[first_model]])
+                    # Only include dates from tomorrow onwards
+                    all_dates = [d for d in all_dates if d >= tomorrow]
 
                     ensemble_objects = []
-                    for d in common_dates:
+                    for d in all_dates:
                         preds, lowers, uppers = [], [], []
-                        for recs in model_forecasts.values():
+                        for name, recs in model_forecasts.items():
                             r = next((r for r in recs if r.target_date == d), None)
                             if r:
                                 preds.append(r.predicted_rate)
-                                if r.lower_bound is not None: lowers.append(r.lower_bound)
-                                if r.upper_bound is not None: uppers.append(r.upper_bound)
+                                if r.lower_bound is not None:
+                                    lowers.append(r.lower_bound)
+                                if r.upper_bound is not None:
+                                    uppers.append(r.upper_bound)
 
                         if preds:
                             ensemble_objects.append(Forecast(
@@ -301,7 +326,7 @@ def get_forecast_status(horizon: int = Query(default=7), db: Session = Depends(g
             "loaded_models": get_loaded_model_names(), "status": "generating",
             "generation_elapsed_seconds": elapsed, "generation_horizon": _generation_state["horizon"],
         }
-    
+
     try:
         today = date.today()
         records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
@@ -321,7 +346,7 @@ def get_latest_forecasts(horizon: int = Query(default=7), model: str = Query(def
     records = crud.get_latest_forecasts(db, model_name=model, horizon=horizon)
     if not records:
         raise HTTPException(status_code=404, detail=f"No forecasts for model='{model}' horizon={horizon}. Run POST /generate first.")
-    
+
     today = date.today()
     return {
         "model_name": model, "forecast_date": str(records[0].forecast_date),
@@ -336,7 +361,7 @@ def get_all_model_forecasts(horizon: int = Query(default=7), db: Session = Depen
     """Get forecasts from all loaded models."""
     if _generation_state["in_progress"]:
         return {"status": "generating", "message": "Forecasts are currently being generated", "models": {}}
-    
+
     result = {}
     for model_name in _models:
         records = crud.get_latest_forecasts(db, model_name, horizon)
@@ -392,7 +417,7 @@ def get_30day_forecast(db: Session = Depends(get_db)):
 def get_forecast_summary(db: Session = Depends(get_db)):
     """Get a summary of all forecast horizons for the dashboard."""
     today = date.today()
-    
+
     def get_horizon_data(horizon):
         records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
         if records and records[0].forecast_date == today:
@@ -400,7 +425,7 @@ def get_forecast_summary(db: Session = Depends(get_db)):
             return {"predicted_rate": last.predicted_rate, "target_date": str(last.target_date),
                     "lower_bound": last.lower_bound, "upper_bound": last.upper_bound}
         return None
-    
+
     latest_rate = crud.get_latest_rate(db)
     return {
         "current_rate": latest_rate.rate if latest_rate else None,
@@ -431,7 +456,7 @@ def generate_forecasts(background_tasks: BackgroundTasks, horizon: int = Query(d
     """Generate forecasts using pre-trained models."""
     if not _models:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
-    
+
     if _generation_state["in_progress"]:
         elapsed = int((datetime.now() - _generation_state["started_at"]).total_seconds()) if _generation_state["started_at"] else 0
         if elapsed > 300:
@@ -450,13 +475,13 @@ def generate_forecasts(background_tasks: BackgroundTasks, horizon: int = Query(d
 
 @router.post("/retrain")
 def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Retrain models with latest data. Supports ARIMA, ARIMAX, XGBoost, and LightGBM."""
+    """Retrain models with latest data."""
     if not _models:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
-    
+
     if _generation_state["in_progress"]:
         return {"status": "already_training", "message": "Training is already in progress."}
-    
+
     def _run_retrain():
         _generation_state.update({"in_progress": True, "started_at": datetime.now(), "horizon": None, "error": None})
         db_session = SessionLocal()
@@ -465,13 +490,11 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
             rates = crud.get_all_rates_as_dataframe(db_session)
             if rates.empty:
                 return
-            
-            # FIX: Use correct base path for artifacts
+
             base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             artifacts_dir = os.path.join(base_dir, 'ml', 'artifacts')
             os.makedirs(artifacts_dir, exist_ok=True)
-            
-            # Retrain ARIMA
+
             if "arima" in _models:
                 try:
                     logger.info("  Retraining ARIMA...")
@@ -479,8 +502,7 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                     logger.info("  ✅ ARIMA retrained")
                 except Exception as e:
                     logger.error(f"  ❌ ARIMA retraining failed: {e}")
-            
-            # Retrain ARIMAX
+
             if "arimax" in _models:
                 try:
                     logger.info("  Retraining ARIMAX...")
@@ -489,8 +511,7 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                     logger.info("  ✅ ARIMAX retrained")
                 except Exception as e:
                     logger.error(f"  ❌ ARIMAX retraining failed: {e}")
-            
-            # Retrain XGBoost
+
             if "xgboost" in _models:
                 try:
                     logger.info("  Retraining XGBoost...")
@@ -507,14 +528,9 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                             xgb_data["model"].fit(X, y)
                             joblib.dump(xgb_data["model"], os.path.join(artifacts_dir, 'xgboost_model.joblib'))
                             logger.info("  ✅ XGBoost retrained and saved")
-                        else:
-                            logger.warning("  ⚠️ XGBoost: no matching features")
-                    else:
-                        logger.warning("  ⚠️ XGBoost: no feature list")
                 except Exception as e:
                     logger.error(f"  ❌ XGBoost retraining failed: {e}")
-            
-            # Retrain LightGBM
+
             if "lightgbm" in _models:
                 try:
                     logger.info("  Retraining LightGBM...")
@@ -531,13 +547,9 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                             lgb_data["model"].fit(X, y)
                             joblib.dump(lgb_data["model"], os.path.join(artifacts_dir, 'lightgbm_model.joblib'))
                             logger.info("  ✅ LightGBM retrained and saved")
-                        else:
-                            logger.warning("  ⚠️ LightGBM: no matching features")
-                    else:
-                        logger.warning("  ⚠️ LightGBM: no feature list")
                 except Exception as e:
                     logger.error(f"  ❌ LightGBM retraining failed: {e}")
-            
+
             logger.info("🎯 Model retraining complete")
         except Exception as e:
             logger.error(f"❌ Retraining failed: {e}")
@@ -545,7 +557,7 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
         finally:
             db_session.close()
             _generation_state.update({"in_progress": False, "completed_at": datetime.now()})
-    
+
     background_tasks.add_task(_run_retrain)
     return {"status": "training_started", "message": "Model retraining started."}
 
@@ -558,10 +570,10 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
 def get_forecast_accuracy(db: Session = Depends(get_db)):
     """Compare past forecasts against actual rates to show model accuracy."""
     records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=7)
-    
+
     if not records:
-        return {"message": "No historical forecasts to compare yet. Generate forecasts daily for 7+ days."}
-    
+        return {"message": "No historical forecasts to compare yet."}
+
     results = []
     for f in records:
         actual = db.query(ExchangeRate).filter(ExchangeRate.date == f.target_date).first()
@@ -575,10 +587,10 @@ def get_forecast_accuracy(db: Session = Depends(get_db)):
                 "error_pct": round(error / actual.rate * 100, 4),
                 "within_range": f.lower_bound <= actual.rate <= f.upper_bound if f.lower_bound and f.upper_bound else None,
             })
-    
+
     if not results:
         return {"message": "No matching actual rates found for comparison yet."}
-    
+
     return {
         "model": "ensemble",
         "forecast_date": str(records[0].forecast_date),
@@ -595,12 +607,12 @@ def get_quick_forecast(db: Session = Depends(get_db)):
     records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=7)
     if not records:
         return {"message": "No forecasts available. Generate first."}
-    
+
     today_rate = crud.get_latest_rate(db)
     last = records[-1]
     diff = last.predicted_rate - today_rate.rate
     direction = "↗" if diff > 0 else "↘"
-    
+
     return {
         "message": f"MWK/USD: {today_rate.rate:,.2f} | 7-day: {last.predicted_rate:,.2f} ({direction} {abs(diff):,.2f})",
         "current_rate": today_rate.rate,
@@ -616,10 +628,10 @@ def export_forecasts(horizon: int = Query(default=7), format: str = Query(defaul
     records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
     if not records:
         raise HTTPException(status_code=404, detail="No forecasts available. Run POST /generate first.")
-    
+
     data = [{"forecast_date": str(r.forecast_date), "target_date": str(r.target_date),
              "predicted_rate": r.predicted_rate, "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records]
-    
+
     if format == "csv":
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=["forecast_date", "target_date", "predicted_rate", "lower_bound", "upper_bound"])
@@ -627,5 +639,5 @@ def export_forecasts(horizon: int = Query(default=7), format: str = Query(defaul
         writer.writerows(data)
         return Response(content=output.getvalue(), media_type="text/csv",
                        headers={"Content-Disposition": f"attachment; filename=kwachacast_forecast_{horizon}d.csv"})
-    
+
     return {"model": "ensemble", "horizon": horizon, "forecasts": data}
