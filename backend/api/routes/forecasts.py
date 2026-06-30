@@ -229,7 +229,6 @@ def _run_generate(horizon: int):
                 if model_name in ["xgboost", "lightgbm"]:
                     raw = _predict_ml_model(model, horizon)
                 elif model_name == "prophet":
-                    # Still generate prophet for individual viewing, but exclude from ensemble
                     if hasattr(model, 'predict'):
                         raw = model.predict(horizon)
                     else:
@@ -244,7 +243,7 @@ def _run_generate(horizon: int):
                 lowers = adjusted["lower_bound"] or [None] * len(adjusted["dates"])
                 uppers = adjusted["upper_bound"] or [None] * len(adjusted["dates"])
 
-                # FIX: Only delete if today's forecasts already exist (keep historical forecasts)
+                # Only delete if today's forecasts already exist
                 existing_today = db.query(Forecast).filter(
                     Forecast.model_name == model_name,
                     Forecast.horizon_days == horizon,
@@ -255,7 +254,7 @@ def _run_generate(horizon: int):
 
                 objects = [
                     Forecast(model_name=model_name, horizon_days=horizon, forecast_date=today,
-                             target_date=d, predicted_rate=p, lower_bound=lo, upper_bound=hi)
+                             target_date=d, predicted_rate=round(p, 2), lower_bound=round(lo, 2) if lo else None, upper_bound=round(hi, 2) if hi else None)
                     for d, p, lo, hi in zip(adjusted["dates"], adjusted["predicted"], lowers, uppers)
                 ]
                 crud.save_forecasts_bulk(db, objects)
@@ -264,7 +263,7 @@ def _run_generate(horizon: int):
             except Exception as e:
                 logger.error(f"  ❌ {model_name} generation failed: {e}")
 
-        # Ensemble - only use arima, arimax, xgboost, lightgbm (exclude prophet)
+        # Ensemble
         ensemble_candidates = [m for m in generated_models if m in ensemble_model_names]
         if len(ensemble_candidates) >= 2:
             try:
@@ -276,10 +275,8 @@ def _run_generate(horizon: int):
                         model_forecasts[name] = recs
 
                 if model_forecasts:
-                    # Get all target dates from the first model
                     first_model = list(model_forecasts.keys())[0]
                     all_dates = sorted([r.target_date for r in model_forecasts[first_model]])
-                    # Only include dates from tomorrow onwards
                     all_dates = [d for d in all_dates if d >= tomorrow]
 
                     ensemble_objects = []
@@ -297,13 +294,12 @@ def _run_generate(horizon: int):
                         if preds:
                             ensemble_objects.append(Forecast(
                                 model_name="ensemble", horizon_days=horizon, forecast_date=today,
-                                target_date=d, predicted_rate=sum(preds)/len(preds),
-                                lower_bound=sum(lowers)/len(lowers) if lowers else None,
-                                upper_bound=sum(uppers)/len(uppers) if uppers else None,
+                                target_date=d, predicted_rate=round(sum(preds)/len(preds), 2),
+                                lower_bound=round(sum(lowers)/len(lowers), 2) if lowers else None,
+                                upper_bound=round(sum(uppers)/len(uppers), 2) if uppers else None,
                             ))
 
                     if ensemble_objects:
-                        # FIX: Only delete if today's ensemble forecasts already exist
                         existing_ensemble = db.query(Forecast).filter(
                             Forecast.model_name == "ensemble",
                             Forecast.horizon_days == horizon,
@@ -366,8 +362,8 @@ def get_latest_forecasts(horizon: int = Query(default=7), model: str = Query(def
     return {
         "model_name": model, "forecast_date": str(records[0].forecast_date),
         "is_stale": records[0].forecast_date != today, "horizon_days": horizon,
-        "forecasts": [{"target_date": str(r.target_date), "predicted_rate": r.predicted_rate,
-                        "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records],
+        "forecasts": [{"target_date": str(r.target_date), "predicted_rate": round(r.predicted_rate, 2),
+                        "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None, "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None} for r in records],
     }
 
 
@@ -383,8 +379,8 @@ def get_all_model_forecasts(horizon: int = Query(default=7), db: Session = Depen
         if records:
             result[model_name] = {
                 "model_name": model_name, "forecast_date": str(records[0].forecast_date), "horizon_days": horizon,
-                "forecasts": [{"target_date": str(r.target_date), "predicted_rate": r.predicted_rate,
-                                "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records],
+                "forecasts": [{"target_date": str(r.target_date), "predicted_rate": round(r.predicted_rate, 2),
+                                "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None, "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None} for r in records],
             }
     return result
 
@@ -395,10 +391,12 @@ def get_1day_forecast(db: Session = Depends(get_db)):
     records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=1)
     if not records:
         raise HTTPException(status_code=404, detail="No 1-day forecast. Run POST /generate first.")
+    r = records[0]
     return {
-        "horizon": 1, "forecast_date": str(records[0].forecast_date),
-        "target_date": str(records[0].target_date), "predicted_rate": records[0].predicted_rate,
-        "lower_bound": records[0].lower_bound, "upper_bound": records[0].upper_bound,
+        "horizon": 1, "forecast_date": str(r.forecast_date),
+        "target_date": str(r.target_date), "predicted_rate": round(r.predicted_rate, 2),
+        "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None,
+        "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None,
     }
 
 
@@ -410,8 +408,8 @@ def get_7day_forecast(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No 7-day forecast. Run POST /generate first.")
     return {
         "horizon": 7, "forecast_date": str(records[0].forecast_date),
-        "forecasts": [{"target_date": str(r.target_date), "predicted_rate": r.predicted_rate,
-                        "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records],
+        "forecasts": [{"target_date": str(r.target_date), "predicted_rate": round(r.predicted_rate, 2),
+                        "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None, "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None} for r in records],
     }
 
 
@@ -423,8 +421,8 @@ def get_30day_forecast(db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="No 30-day forecast. Run POST /generate first.")
     return {
         "horizon": 30, "forecast_date": str(records[0].forecast_date),
-        "forecasts": [{"target_date": str(r.target_date), "predicted_rate": r.predicted_rate,
-                        "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records],
+        "forecasts": [{"target_date": str(r.target_date), "predicted_rate": round(r.predicted_rate, 2),
+                        "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None, "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None} for r in records],
     }
 
 
@@ -437,13 +435,13 @@ def get_forecast_summary(db: Session = Depends(get_db)):
         records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
         if records and records[0].forecast_date == today:
             last = records[-1]
-            return {"predicted_rate": last.predicted_rate, "target_date": str(last.target_date),
-                    "lower_bound": last.lower_bound, "upper_bound": last.upper_bound}
+            return {"predicted_rate": round(last.predicted_rate, 2), "target_date": str(last.target_date),
+                    "lower_bound": round(last.lower_bound, 2) if last.lower_bound else None, "upper_bound": round(last.upper_bound, 2) if last.upper_bound else None}
         return None
 
     latest_rate = crud.get_latest_rate(db)
     return {
-        "current_rate": latest_rate.rate if latest_rate else None,
+        "current_rate": round(latest_rate.rate, 2) if latest_rate else None,
         "current_date": str(today),
         "forecasts": {"1_day": get_horizon_data(1), "7_day": get_horizon_data(7), "30_day": get_horizon_data(30)},
     }
@@ -596,8 +594,8 @@ def get_forecast_accuracy(db: Session = Depends(get_db)):
             error = abs(f.predicted_rate - actual.rate)
             results.append({
                 "target_date": str(f.target_date),
-                "predicted": f.predicted_rate,
-                "actual": actual.rate,
+                "predicted": round(f.predicted_rate, 2),
+                "actual": round(actual.rate, 2),
                 "error_mwk": round(error, 2),
                 "error_pct": round(error / actual.rate * 100, 4),
                 "within_range": f.lower_bound <= actual.rate <= f.upper_bound if f.lower_bound and f.upper_bound else None,
@@ -630,8 +628,8 @@ def get_quick_forecast(db: Session = Depends(get_db)):
 
     return {
         "message": f"MWK/USD: {today_rate.rate:,.2f} | 7-day: {last.predicted_rate:,.2f} ({direction} {abs(diff):,.2f})",
-        "current_rate": today_rate.rate,
-        "forecast_7d": last.predicted_rate,
+        "current_rate": round(today_rate.rate, 2) if today_rate else None,
+        "forecast_7d": round(last.predicted_rate, 2),
         "change_mwk": round(diff, 2),
         "change_pct": round(diff / today_rate.rate * 100, 2),
     }
@@ -645,7 +643,7 @@ def export_forecasts(horizon: int = Query(default=7), format: str = Query(defaul
         raise HTTPException(status_code=404, detail="No forecasts available. Run POST /generate first.")
 
     data = [{"forecast_date": str(r.forecast_date), "target_date": str(r.target_date),
-             "predicted_rate": r.predicted_rate, "lower_bound": r.lower_bound, "upper_bound": r.upper_bound} for r in records]
+             "predicted_rate": round(r.predicted_rate, 2), "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None, "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None} for r in records]
 
     if format == "csv":
         output = io.StringIO()
@@ -656,6 +654,7 @@ def export_forecasts(horizon: int = Query(default=7), format: str = Query(defaul
                        headers={"Content-Disposition": f"attachment; filename=kwachacast_forecast_{horizon}d.csv"})
 
     return {"model": "ensemble", "horizon": horizon, "forecasts": data}
+
 
 @router.get("/historical")
 def get_historical_forecasts(
@@ -682,15 +681,14 @@ def get_historical_forecasts(
         if not records:
             return {"message": "No historical forecasts found for this range.", "forecast_dates": {}}
         
-        # Group by forecast_date
         from collections import defaultdict
         grouped = defaultdict(list)
         for r in records:
             grouped[str(r.forecast_date)].append({
                 "target_date": str(r.target_date),
-                "predicted_rate": r.predicted_rate,
-                "lower_bound": r.lower_bound,
-                "upper_bound": r.upper_bound,
+                "predicted_rate": round(r.predicted_rate, 2),
+                "lower_bound": round(r.lower_bound, 2) if r.lower_bound else None,
+                "upper_bound": round(r.upper_bound, 2) if r.upper_bound else None,
             })
         
         return {
