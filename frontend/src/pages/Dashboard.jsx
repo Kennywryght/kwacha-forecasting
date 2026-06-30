@@ -102,40 +102,46 @@ const ErrorBarDot = ({ cx, cy, payload, color }) => {
 
 // ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
-  const nextDayData = [];
-  const sevenDayData = [];
-  const thirtyDayData = [];
+  const allData = [];
   
+  // Next day - just 1 dot at day 1
   if (forecast1d?.predicted_rate && forecast1d?.target_date) {
-    nextDayData.push({ 
-      day: 1, 
-      value: Number(Number(forecast1d.predicted_rate).toFixed(2)), 
+    allData.push({ 
+      day: "Day 1", 
+      dayNum: 1,
+      nextDay: Number(Number(forecast1d.predicted_rate).toFixed(2)),
       lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null, 
       upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null, 
       date: fmtDate(forecast1d.target_date) 
     });
   }
   
+  // 7 days - days 1-7
   if (forecast7d?.forecasts) {
     forecast7d.forecasts.forEach((v, i) => {
-      if (v?.target_date) {
-        sevenDayData.push({ 
-          day: i + 1, 
-          value: Number(Number(v.predicted_rate).toFixed(2)), 
-          lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, 
-          upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, 
-          date: fmtDate(v.target_date) 
-        });
-      }
+      allData.push({ 
+        day: `Day ${i + 1}`,
+        dayNum: i + 1,
+        sevenDay: Number(Number(v.predicted_rate).toFixed(2)),
+        lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, 
+        upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, 
+        date: fmtDate(v.target_date) 
+      });
     });
   }
   
+  // 30 days - days 1-30
   if (forecast30d?.forecasts) {
     forecast30d.forecasts.forEach((v, i) => {
-      if (v?.target_date) {
-        thirtyDayData.push({ 
-          day: i + 1, 
-          value: Number(Number(v.predicted_rate).toFixed(2)), 
+      // Find existing entry or create new
+      const existing = allData.find(d => d.dayNum === i + 1);
+      if (existing) {
+        existing.thirtyDay = Number(Number(v.predicted_rate).toFixed(2));
+      } else {
+        allData.push({ 
+          day: `Day ${i + 1}`,
+          dayNum: i + 1,
+          thirtyDay: Number(Number(v.predicted_rate).toFixed(2)),
           lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null, 
           upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null, 
           date: fmtDate(v.target_date) 
@@ -144,96 +150,45 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
     });
   }
   
-  if (!nextDayData.length && !sevenDayData.length && !thirtyDayData.length) return null;
-
-  const hasConfidenceIntervals = [...nextDayData, ...sevenDayData, ...thirtyDayData].some(d => d.lower != null && d.upper != null);
+  // Sort by day number
+  allData.sort((a, b) => a.dayNum - b.dayNum);
+  
+  if (!allData.length) return null;
 
   return (
     <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
       <h3 className="text-sm font-semibold text-stone-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-stone-500 mb-4">
-        {hasConfidenceIntervals 
-          ? "Projected Kwacha movement with 95% confidence intervals." 
-          : "Projected Kwacha movement across timeframes."}
-      </p>
-      <ResponsiveContainer width="100%" height={280}>
-        <LineChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+      <p className="text-xs text-stone-500 mb-4">Projected Kwacha movement across timeframes.</p>
+      <ResponsiveContainer width="100%" height={250}>
+        <LineChart data={allData}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
-          <XAxis 
-            type="number"
-            domain={[1, 30]}
-            tickCount={30}
-            tick={{ fill: '#8A968D', fontSize: 10 }}
-            label={{ value: 'Days ahead', position: 'insideBottom', fill: '#8A968D', fontSize: 10, offset: -5 }}
-          />
-          <YAxis 
-            tick={{ fill: '#8A968D', fontSize: 10 }} 
-            domain={['auto', 'auto']} 
-            tickFormatter={(v) => v.toFixed(0)} 
-          />
-          <Tooltip 
-            contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }} 
+          <XAxis dataKey="day" tick={{ fill: '#8A968D', fontSize: 10 }} interval={2} />
+          <YAxis tick={{ fill: '#8A968D', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }} 
             formatter={(v, name) => {
               if (v == null) return ['N/A', name];
-              if (name === 'Next day') return [`MWK ${Number(v).toFixed(2)}`, 'Next day forecast'];
-              if (name === '7 days') return [`MWK ${Number(v).toFixed(2)}`, '7-day forecast'];
-              if (name === '30 days') return [`MWK ${Number(v).toFixed(2)}`, '30-day forecast'];
+              if (name === 'nextDay') return [`MWK ${Number(v).toFixed(2)}`, 'Next day'];
+              if (name === 'sevenDay') return [`MWK ${Number(v).toFixed(2)}`, '7-day forecast'];
+              if (name === 'thirtyDay') return [`MWK ${Number(v).toFixed(2)}`, '30-day forecast'];
               return [`MWK ${Number(v).toFixed(2)}`, name];
-            }}
-          />
+            }} />
           <Legend />
-          
-          {nextDayData.length > 0 && (
-            <Line 
-              type="monotone" 
-              data={nextDayData}
-              dataKey="value" 
-              stroke="#E0AC4F" 
-              strokeWidth={0}
-              dot={{ r: 6, fill: '#E0AC4F', stroke: '#1A211D', strokeWidth: 2 }}
-              name="Next day"
-              isAnimationActive={false}
-            />
-          )}
-          
-          {sevenDayData.length > 0 && (
-            <Line 
-              type="monotone" 
-              data={sevenDayData}
-              dataKey="value" 
-              stroke="#7DA0C4" 
-              strokeWidth={2}
-              dot={(props) => <ErrorBarDot {...props} color="#7DA0C4" />}
-              name="7 days"
-              isAnimationActive={false}
-            />
-          )}
-          
-          {thirtyDayData.length > 0 && (
-            <Line 
-              type="monotone" 
-              data={thirtyDayData}
-              dataKey="value" 
-              stroke="#6FAE82" 
-              strokeWidth={2}
-              dot={(props) => <ErrorBarDot {...props} color="#6FAE82" />}
-              name="30 days"
-              isAnimationActive={false}
-            />
-          )}
+          {/* Gold dot for next day */}
+          <Line type="monotone" dataKey="nextDay" stroke="#E0AC4F" strokeWidth={0} dot={{ r: 6, fill: '#E0AC4F', stroke: '#1A211D', strokeWidth: 2 }} name="Next day" connectNulls={false} />
+          {/* Blue line for 7 days */}
+          <Line type="monotone" dataKey="sevenDay" stroke="#7DA0C4" strokeWidth={2} dot={{ r: 3, fill: '#7DA0C4' }} name="7 days" connectNulls={false} />
+          {/* Green line for 30 days */}
+          <Line type="monotone" dataKey="thirtyDay" stroke="#6FAE82" strokeWidth={2} dot={{ r: 3, fill: '#6FAE82' }} name="30 days" connectNulls={false} />
         </LineChart>
       </ResponsiveContainer>
-      {hasConfidenceIntervals && (
-        <details className="mt-3 group">
-          <summary className="text-xs text-stone-500 cursor-pointer hover:text-stone-400 transition">💡 How to interpret this chart</summary>
-          <div className="mt-2 p-3 bg-stone-700/40 rounded-lg text-xs text-stone-400 space-y-1.5">
-            <p>• <span className="text-stone-300 font-medium">Gold dot</span> = tomorrow's predicted rate.</p>
-            <p>• <span className="text-stone-300 font-medium">Blue line</span> = 7-day forecast with confidence intervals.</p>
-            <p>• <span className="text-stone-300 font-medium">Green line</span> = 30-day forecast showing the longer-term trend.</p>
-            <p>• <span className="text-stone-300 font-medium">Hover over dots</span> to see upper (↑) and lower (↓) bounds.</p>
-          </div>
-        </details>
-      )}
+      <details className="mt-3 group">
+        <summary className="text-xs text-stone-500 cursor-pointer hover:text-stone-400 transition">💡 How to interpret this chart</summary>
+        <div className="mt-2 p-3 bg-stone-700/40 rounded-lg text-xs text-stone-400 space-y-1.5">
+          <p>• <span className="text-stone-300 font-medium">Gold dot</span> = tomorrow's predicted rate.</p>
+          <p>• <span className="text-stone-300 font-medium">Blue line</span> = 7-day forecast.</p>
+          <p>• <span className="text-stone-300 font-medium">Green line</span> = 30-day forecast showing the longer-term trend.</p>
+        </div>
+      </details>
     </div>
   );
 }
