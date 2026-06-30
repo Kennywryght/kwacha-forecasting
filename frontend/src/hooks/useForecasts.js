@@ -7,6 +7,7 @@ import {
   getAnomalies,
   getForecasts,
 } from "../utils/api";
+import { getApiUrl } from "../config";
 
 const normaliseModelForecast = (data) => {
   if (!data?.forecasts) return null;
@@ -19,20 +20,28 @@ const normaliseModelForecast = (data) => {
   };
 };
 
-// NEW: Fetch historical forecasts for Trust Chart
+// Fetch historical forecasts for Trust Chart
 const fetchHistoricalForecasts = async () => {
   try {
     const endDate = new Date().toISOString().slice(0, 10);
     const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
       .toISOString().slice(0, 10);
     
-    const API_BASE = import.meta.env.VITE_API_URL || 'https://kwachacast-api.onrender.com/api/v1';
+    const API_BASE = `${getApiUrl()}/api/v1`;
     const url = `${API_BASE}/forecasts/historical?start_date=${startDate}&end_date=${endDate}&model=ensemble&horizon=7`;
     
+    console.log('Fetching historical forecasts:', url);
+    
     const res = await fetch(url);
+    if (!res.ok) {
+      console.warn('Historical forecasts fetch failed:', res.status);
+      return { forecast_dates: {} };
+    }
     const data = await res.json();
+    console.log('Historical forecasts received:', data?.total_forecast_days, 'days');
     return data;
-  } catch {
+  } catch (err) {
+    console.warn('Historical forecasts error:', err);
     return { forecast_dates: {} };
   }
 };
@@ -52,7 +61,7 @@ export function useDashboardData(horizon = 7) {
   const [loadedModelNames, setLoadedModelNames] = useState([]);
   const [generationStatus, setGenerationStatus] = useState("idle");
   const [generationProgress, setGenerationProgress] = useState(0);
-  const [historicalForecasts, setHistoricalForecasts] = useState(null); // NEW
+  const [historicalForecasts, setHistoricalForecasts] = useState(null);
 
   const isStaleRef = useRef(false);
   const pollingRef = useRef(null);
@@ -205,14 +214,14 @@ export function useDashboardData(horizon = 7) {
         historyData,
         metricsData,
         forecast30dData,
-        historicalData, // NEW
+        historicalData,
       ] = await Promise.all([
         getLatestRate().catch(() => null),
         fetchForecasts().catch(() => ({})),
         getHistory(startDate, endDate).catch(() => []),
         getModelMetrics().catch(() => []),
         getForecasts.getLatest(30).catch(() => null),
-        fetchHistoricalForecasts().catch(() => ({ forecast_dates: {} })), // NEW
+        fetchHistoricalForecasts().catch(() => ({ forecast_dates: {} })),
       ]);
 
       if (!isMountedRef.current) return;
@@ -220,7 +229,7 @@ export function useDashboardData(horizon = 7) {
       setLatestRate(latestRateData);
       setAnomalies([]);
       setForecast30d(forecast30dData);
-      setHistoricalForecasts(historicalData); // NEW
+      setHistoricalForecasts(historicalData);
 
       const filteredMetrics = Array.isArray(metricsData) 
         ? metricsData.filter(m => loadedNames.length === 0 || loadedNames.includes(m.model_name))
@@ -311,7 +320,7 @@ export function useDashboardData(horizon = 7) {
     loadedModelNames,
     generationStatus,
     generationProgress,
-    historicalForecasts, // NEW
+    historicalForecasts,
     refetch: fetchAll,
     generateForecasts,
   };
