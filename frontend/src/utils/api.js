@@ -77,7 +77,12 @@ export const fetchModelRuns = async () => {
     const res = await withRetry(() => api.get(`/models/performance`));
     const data = res.data || {};
     return (data.models || []).map(m => ({
-      ...m, r2: m.r_squared, model_name: m.model_name, rmse: m.rmse, mae: m.mae, mape: m.mape,
+      ...m,
+      model_name: m.model_name,
+      rmse: m.rmse,
+      mae: m.mae,
+      mape: m.mape,
+      directional_accuracy: m.directional_accuracy,
     }));
   } catch { return []; }
 };
@@ -109,6 +114,15 @@ export const get30DayForecast = async () => {
 export const getForecastSummary = async () => {
   try {
     const res = await api.get('/forecasts/summary');
+    return res.data;
+  } catch { return null; }
+};
+
+export const getPastForecasts = async (startDate, endDate) => {
+  try {
+    const res = await api.get('/forecasts/latest', { 
+      params: { horizon: 30, model: 'ensemble' } 
+    });
     return res.data;
   } catch { return null; }
 };
@@ -148,13 +162,14 @@ export const getForecasts = {
 export const getAnomalies = async () => [];
 export const getRates = getLatestRate;
 export const fetchHistoryData = fetchHistory;
-// -- Advanced Endpoints ------------------------------------------------------
+
+// ── Advanced Endpoints ──────────────────────────────────────────────────
 export const getRateStats = async () => { try { const res = await api.get('/rates/stats'); return res.data; } catch { return null; } };
 export const getRateAlerts = async () => { try { const res = await api.get('/rates/alerts'); return res.data; } catch { return null; } };
 export const getForecastAccuracy = async () => { try { const res = await api.get('/forecasts/accuracy'); return res.data; } catch { return null; } };
 export const getQuickForecast = async () => { try { const res = await api.get('/forecasts/quick'); return res.data; } catch { return null; } };
 export const getModelsHealth = async () => { try { const res = await api.get('/models/health'); return res.data; } catch { return null; } };
-export const exportForecasts = (horizon = 7) => { window.open('/forecasts/export?horizon=' + horizon + '&format=csv', '_blank'); };
-export const exportRates = () => { window.open('/rates/export?format=csv', '_blank'); };
+export const exportForecasts = (horizon = 7) => { window.open(`https://kwachacast-api.onrender.com/api/v1/forecasts/export?horizon=${horizon}&format=csv`, '_blank'); };
+export const exportRates = () => { window.open('https://kwachacast-api.onrender.com/api/v1/rates/export?format=csv', '_blank'); };
 
 export const getPipeline = async () => { try { const res = await api.get('/pipeline/status'); return res.data || { status: 'unknown' }; } catch { return { status: 'unknown' }; } };

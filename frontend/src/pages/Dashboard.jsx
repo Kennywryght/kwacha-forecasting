@@ -2,7 +2,7 @@
 import { Link } from "react-router-dom";
 import { useDashboardData } from "../hooks/useForecasts";
 import HistoryChart from "../components/HistoryChart";
-import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, exportForecasts, get7DayForecast, get30DayForecast, getRateAlerts } from "../utils/api";
+import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, get7DayForecast, get30DayForecast, getRateAlerts } from "../utils/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, Plane, ShoppingCart, Home, Clock, HelpCircle, Bell, ArrowRight } from "lucide-react";
 
@@ -178,11 +178,12 @@ function KeyInsight({ displayRate, sevenDayChange, accuracy }) {
 }
 
 // ── Last Updated ──────────────────────────────────────────────────────────────
-function LastUpdated({ forecast1d }) {
+function LastUpdated() {
+  const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   return (
     <div className="text-slate-500 text-xs flex items-center gap-1">
       <Clock className="w-3 h-3" />
-      Last updated: {forecast1d?.forecast_date ? fmtDate(forecast1d.forecast_date) : forecast1d?.target_date ? fmtDate(forecast1d.target_date) : 'Never'}
+      Last updated: {today}
     </div>
   );
 }
@@ -293,7 +294,7 @@ function AccuracyCard({ accuracy }) {
   );
 }
 
-// ── Rate Alerts (NEW) ────────────────────────────────────────────────────────
+// ── Rate Alerts ──────────────────────────────────────────────────────────────
 function RateAlerts({ alerts }) {
   if (!alerts?.alerts?.length) return null;
   
@@ -441,10 +442,12 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-white">KwachaCast</h1>
           <p className="text-slate-400 text-sm mt-1">Exchange rate forecasts for the Malawi Kwacha</p>
-          <LastUpdated forecast1d={forecast1d} />
+          <LastUpdated />
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => exportForecasts(7)} className="text-slate-400 hover:text-white text-sm flex items-center gap-1"><Download className="w-3.5 h-3.5" />Export</button>
+          <button onClick={() => window.open('https://kwachacast-api.onrender.com/api/v1/forecasts/export?horizon=7&format=csv', '_blank')} className="text-slate-400 hover:text-white text-sm flex items-center gap-1">
+            <Download className="w-3.5 h-3.5" />Export
+          </button>
           <button onClick={handleGenerate} disabled={generating} className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-600 text-white text-sm px-4 py-2 rounded-lg font-medium transition flex items-center gap-2">
             {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}{generating ? "Generating..." : "Refresh"}
           </button>
@@ -455,7 +458,7 @@ export default function Dashboard() {
       {loading && <div className="grid grid-cols-4 gap-4 animate-pulse">{[...Array(4)].map((_, i) => <div key={i} className="bg-slate-800/60 rounded-2xl h-32 border border-slate-700/60" />)}</div>}
       {!loading && noForecasts && <EmptyForecasts onGenerate={handleGenerate} generating={generating} />}
 
-      {/* Rate Alerts (NEW) */}
+      {/* Rate Alerts */}
       {!loading && alerts && <RateAlerts alerts={alerts} />}
 
       {/* KPI Cards */}

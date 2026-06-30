@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getForecasts, getModelMetrics, getRateStats, getForecastAccuracy } from "../utils/api";
 import { RefreshCw, Loader2, TrendingUp, BarChart3, Shield, Activity, Database, Cpu, ExternalLink, Server, Zap, Clock, Eye, Download } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 function StatusBadge({ status }) {
   const colors = {
@@ -39,7 +40,7 @@ function ModelMetricsTable({ metrics }) {
             <th className="text-right py-3 px-4 font-semibold text-slate-300">MAPE (%)</th>
             <th className="text-right py-3 px-4 font-semibold text-slate-300">RMSE</th>
             <th className="text-right py-3 px-4 font-semibold text-slate-300">MAE</th>
-            <th className="text-right py-3 px-4 font-semibold text-slate-300">R²</th>
+            <th className="text-right py-3 px-4 font-semibold text-slate-300">Dir Acc</th>
             <th className="text-center py-3 px-4 font-semibold text-slate-300">Status</th>
           </tr>
         </thead>
@@ -55,7 +56,9 @@ function ModelMetricsTable({ metrics }) {
               <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.mape?.toFixed(4)}</td>
               <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.rmse?.toFixed(2)}</td>
               <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.mae?.toFixed(2)}</td>
-              <td className="text-right py-3 px-4 text-slate-300 font-mono">{m.r_squared?.toFixed(4) || '—'}</td>
+              <td className="text-right py-3 px-4 text-slate-300 font-mono">
+                {m.directional_accuracy != null ? `${(m.directional_accuracy * 100).toFixed(1)}%` : '—'}
+              </td>
               <td className="text-center py-3 px-4">
                 <StatusBadge status={m.mape < 1 ? "success" : m.mape < 3 ? "warning" : "error"} />
               </td>
@@ -76,9 +79,8 @@ function ForecastPreview() {
     fetch('https://kwachacast-api.onrender.com/api/v1/forecasts/all?horizon=7')
       .then(r => r.json())
       .then(data => {
-        // Extract forecasts from all models
         const modelPreviews = {};
-        if (data && typeof data === 'object') {
+        if (data && typeof data === 'object' && !data.status) {
           Object.entries(data).forEach(([modelName, modelData]) => {
             if (modelData?.forecasts) {
               modelPreviews[modelName] = modelData;
@@ -143,6 +145,116 @@ function ForecastPreview() {
       <p className="text-xs text-slate-500 mt-3">
         Forecast date: {firstModel?.forecast_date || 'Unknown'} • 
         Comparing {modelNames.length} models
+      </p>
+    </div>
+  );
+}
+
+// ── Model Forecast Chart ─────────────────────────────────────────────────────
+function ModelForecastChart() {
+  const [chartData, setChartData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedHorizon, setSelectedHorizon] = useState(7);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`https://kwachacast-api.onrender.com/api/v1/forecasts/all?horizon=${selectedHorizon}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && typeof data === 'object' && !data.status) {
+          const allDates = new Set();
+          const modelData = {};
+          
+          Object.entries(data).forEach(([modelName, modelInfo]) => {
+            if (modelInfo?.forecasts) {
+              modelData[modelName] = {};
+              modelInfo.forecasts.forEach(f => {
+                allDates.add(f.target_date);
+                modelData[modelName][f.target_date] = f.predicted_rate;
+              });
+            }
+          });
+          
+          const sortedDates = Array.from(allDates).sort();
+          const chartSeries = sortedDates.map(date => {
+            const point = { date };
+            Object.keys(modelData).forEach(model => {
+              point[model] = modelData[model][date] || null;
+            });
+            return point;
+          });
+          
+          setChartData({ series: chartSeries, models: Object.keys(modelData) });
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [selectedHorizon]);
+
+  if (loading) {
+    return (
+      <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-5 h-5 text-emerald-400 animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!chartData?.series?.length) return null;
+
+  const modelColors = {
+    arima: '#34d399',
+    arimax: '#60a5fa',
+    prophet: '#fbbf24',
+    xgboost: '#f472b6',
+    lightgbm: '#a78bfa',
+    ensemble: '#ffffff',
+  };
+
+  return (
+    <div className="bg-slate-800/60 rounded-2xl p-5 border border-slate-700/60">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+          <TrendingUp className="w-4 h-4 text-emerald-400" />
+          Model Forecast Comparison Chart
+        </h3>
+        <select
+          value={selectedHorizon}
+          onChange={(e) => setSelectedHorizon(Number(e.target.value))}
+          className="bg-slate-700 border border-slate-600 text-slate-300 text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-emerald-500"
+        >
+          <option value={1}>1 Day</option>
+          <option value={7}>7 Days</option>
+          <option value={30}>30 Days</option>
+        </select>
+      </div>
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={chartData.series}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+          <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
+          <Tooltip 
+            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '8px', color: '#e2e8f0', fontSize: 12 }}
+            formatter={(v) => v != null ? [`MWK ${Number(v).toFixed(2)}`, undefined] : ['N/A', undefined]} 
+          />
+          <Legend />
+          {chartData.models.map(model => (
+            <Line
+              key={model}
+              type="monotone"
+              dataKey={model}
+              stroke={modelColors[model] || '#94a3b8'}
+              strokeWidth={2}
+              dot={{ r: 2 }}
+              name={model.toUpperCase()}
+              connectNulls={false}
+            />
+          ))}
+        </LineChart>
+      </ResponsiveContainer>
+      <p className="text-xs text-slate-500 mt-3">
+        Comparing {chartData.models.length} models • Horizon: {selectedHorizon} day{selectedHorizon > 1 ? 's' : ''}
       </p>
     </div>
   );
@@ -309,7 +421,6 @@ export default function AdminDashboard() {
 
   useEffect(() => { fetchAll(); }, []);
 
-  // Auto-refresh every 5 minutes
   useEffect(() => {
     const interval = setInterval(fetchAll, 5 * 60 * 1000);
     return () => clearInterval(interval);
@@ -438,34 +549,10 @@ export default function AdminDashboard() {
       {/* Stats Cards */}
       {!loading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard 
-            icon={Database} 
-            title="Active Models" 
-            value={metrics.length} 
-            subtitle="Loaded & fitted" 
-            color="text-blue-400" 
-          />
-          <StatCard 
-            icon={TrendingUp} 
-            title="Latest Rate" 
-            value={stats?.current ? `MWK ${stats.current.toFixed(2)}` : "—"} 
-            subtitle="Current MWK/USD" 
-            color="text-emerald-400" 
-          />
-          <StatCard 
-            icon={Shield} 
-            title="Best MAPE" 
-            value={bestModel ? `${bestModel.mape?.toFixed(4)}%` : "—"} 
-            subtitle={bestModel?.model_name?.toUpperCase()} 
-            color="text-emerald-400" 
-          />
-          <StatCard 
-            icon={Cpu} 
-            title="Accuracy Data" 
-            value={accuracy?.comparisons?.length || 0} 
-            subtitle="Historical comparisons" 
-            color="text-purple-400" 
-          />
+          <StatCard icon={Database} title="Active Models" value={metrics.length} subtitle="Loaded & fitted" color="text-blue-400" />
+          <StatCard icon={TrendingUp} title="Latest Rate" value={stats?.current ? `MWK ${stats.current.toFixed(2)}` : "—"} subtitle="Current MWK/USD" color="text-emerald-400" />
+          <StatCard icon={Shield} title="Best MAPE" value={bestModel ? `${bestModel.mape?.toFixed(4)}%` : "—"} subtitle={bestModel?.model_name?.toUpperCase()} color="text-emerald-400" />
+          <StatCard icon={Cpu} title="Accuracy Data" value={accuracy?.comparisons?.length || 0} subtitle="Historical comparisons" color="text-purple-400" />
         </div>
       )}
 
@@ -487,7 +574,10 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Forecast Preview */}
+      {/* Model Forecast Chart */}
+      {!loading && <ModelForecastChart />}
+
+      {/* Forecast Preview Table */}
       {!loading && <ForecastPreview />}
 
       {/* System Status + Accuracy */}

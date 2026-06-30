@@ -30,7 +30,7 @@ def get_model_performance(db: Session = Depends(get_db)):
                 "mape": m.get("mape"),
                 "rmse": m.get("rmse"),
                 "mae": m.get("mae"),
-                "r_squared": m.get("r2", m.get("r_squared")),
+                "directional_accuracy": m.get("directional_accuracy", m.get("dir_acc")),
             })
         
         if models_list:
@@ -46,7 +46,7 @@ def get_model_performance(db: Session = Depends(get_db)):
                     "rmse":        r.rmse,
                     "mae":         r.mae,
                     "mape":        r.mape,
-                    "r_squared":   r.r_squared,
+                    "directional_accuracy": None,
                     "trained_at":  str(r.trained_at) if r.trained_at else None,
                 }
                 for r in runs
@@ -55,6 +55,7 @@ def get_model_performance(db: Session = Depends(get_db)):
     
     # Nothing found
     return {"models": []}
+
 
 @router.get("/health")
 def get_models_health():
