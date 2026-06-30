@@ -90,6 +90,18 @@ def _adjust_forecast_dates(raw: dict, horizon: int, start_date: date) -> dict:
         else:
             clean_dates.append(d)
 
+    # FIX: Filter dates to only include dates from start_date onwards
+    filtered_indices = []
+    for i, d in enumerate(clean_dates):
+        if d >= start_date:
+            filtered_indices.append(i)
+    
+    if filtered_indices:
+        clean_dates = [clean_dates[i] for i in filtered_indices]
+        predicted = [predicted[i] for i in filtered_indices if i < len(predicted)]
+        lower = [lower[i] for i in filtered_indices if i < len(lower)]
+        upper = [upper[i] for i in filtered_indices if i < len(upper)]
+
     while len(lower) < len(predicted):
         lower.append(None)
     while len(upper) < len(predicted):
@@ -235,7 +247,9 @@ def _run_generate(horizon: int):
 
                 if model_forecasts:
                     date_sets = [set(r.target_date for r in recs) for recs in model_forecasts.values()]
-                    common_dates = sorted(set.intersection(*date_sets))[:horizon]
+                    common_dates = sorted(set.intersection(*date_sets))
+                    # FIX: Only include dates from tomorrow onwards
+                    common_dates = [d for d in common_dates if d >= tomorrow][:horizon]
 
                     ensemble_objects = []
                     for d in common_dates:
@@ -337,8 +351,8 @@ def get_all_model_forecasts(horizon: int = Query(default=7), db: Session = Depen
 
 @router.get("/1-day")
 def get_1day_forecast(db: Session = Depends(get_db)):
-    """Get the latest 1-day forecast from ARIMAX."""
-    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=1)
+    """Get the latest 1-day forecast from Ensemble."""
+    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=1)
     if not records:
         raise HTTPException(status_code=404, detail="No 1-day forecast. Run POST /generate first.")
     return {
@@ -350,8 +364,8 @@ def get_1day_forecast(db: Session = Depends(get_db)):
 
 @router.get("/7-day")
 def get_7day_forecast(db: Session = Depends(get_db)):
-    """Get the latest 7-day forecasts from ARIMAX."""
-    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=7)
+    """Get the latest 7-day forecasts from Ensemble."""
+    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=7)
     if not records:
         raise HTTPException(status_code=404, detail="No 7-day forecast. Run POST /generate first.")
     return {
@@ -363,8 +377,8 @@ def get_7day_forecast(db: Session = Depends(get_db)):
 
 @router.get("/30-day")
 def get_30day_forecast(db: Session = Depends(get_db)):
-    """Get the latest 30-day forecasts from ARIMAX."""
-    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=30)
+    """Get the latest 30-day forecasts from Ensemble."""
+    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=30)
     if not records:
         raise HTTPException(status_code=404, detail="No 30-day forecast. Run POST /generate first.")
     return {
@@ -380,7 +394,7 @@ def get_forecast_summary(db: Session = Depends(get_db)):
     today = date.today()
     
     def get_horizon_data(horizon):
-        records = crud.get_latest_forecasts(db, model_name="arimax", horizon=horizon)
+        records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
         if records and records[0].forecast_date == today:
             last = records[-1]
             return {"predicted_rate": last.predicted_rate, "target_date": str(last.target_date),
@@ -452,6 +466,11 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
             if rates.empty:
                 return
             
+            # FIX: Use correct base path for artifacts
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            artifacts_dir = os.path.join(base_dir, 'ml', 'artifacts')
+            os.makedirs(artifacts_dir, exist_ok=True)
+            
             # Retrain ARIMA
             if "arima" in _models:
                 try:
@@ -461,7 +480,7 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                 except Exception as e:
                     logger.error(f"  ❌ ARIMA retraining failed: {e}")
             
-            # Retrain ARIMAX (needs feature engineering)
+            # Retrain ARIMAX
             if "arimax" in _models:
                 try:
                     logger.info("  Retraining ARIMAX...")
@@ -486,7 +505,6 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                             X = rates_eng[available].fillna(0)
                             y = rates_eng['rate']
                             xgb_data["model"].fit(X, y)
-                            artifacts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ml', 'artifacts')
                             joblib.dump(xgb_data["model"], os.path.join(artifacts_dir, 'xgboost_model.joblib'))
                             logger.info("  ✅ XGBoost retrained and saved")
                         else:
@@ -511,7 +529,6 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
                             X = rates_eng[available].fillna(0)
                             y = rates_eng['rate']
                             lgb_data["model"].fit(X, y)
-                            artifacts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'ml', 'artifacts')
                             joblib.dump(lgb_data["model"], os.path.join(artifacts_dir, 'lightgbm_model.joblib'))
                             logger.info("  ✅ LightGBM retrained and saved")
                         else:
@@ -540,8 +557,7 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
 @router.get("/accuracy")
 def get_forecast_accuracy(db: Session = Depends(get_db)):
     """Compare past forecasts against actual rates to show model accuracy."""
-    past_date = date.today() - timedelta(days=7)
-    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=7)
+    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=7)
     
     if not records:
         return {"message": "No historical forecasts to compare yet. Generate forecasts daily for 7+ days."}
@@ -564,7 +580,7 @@ def get_forecast_accuracy(db: Session = Depends(get_db)):
         return {"message": "No matching actual rates found for comparison yet."}
     
     return {
-        "model": "arimax",
+        "model": "ensemble",
         "forecast_date": str(records[0].forecast_date),
         "comparisons": results,
         "avg_error_mwk": round(sum(r["error_mwk"] for r in results) / len(results), 2),
@@ -575,8 +591,8 @@ def get_forecast_accuracy(db: Session = Depends(get_db)):
 
 @router.get("/quick")
 def get_quick_forecast(db: Session = Depends(get_db)):
-    """Get a quick one-line forecast summary - perfect for bots and notifications."""
-    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=7)
+    """Get a quick one-line forecast summary."""
+    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=7)
     if not records:
         return {"message": "No forecasts available. Generate first."}
     
@@ -597,7 +613,7 @@ def get_quick_forecast(db: Session = Depends(get_db)):
 @router.get("/export")
 def export_forecasts(horizon: int = Query(default=7), format: str = Query(default="json"), db: Session = Depends(get_db)):
     """Export forecasts in JSON or CSV format."""
-    records = crud.get_latest_forecasts(db, model_name="arimax", horizon=horizon)
+    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=horizon)
     if not records:
         raise HTTPException(status_code=404, detail="No forecasts available. Run POST /generate first.")
     
@@ -612,4 +628,4 @@ def export_forecasts(horizon: int = Query(default=7), format: str = Query(defaul
         return Response(content=output.getvalue(), media_type="text/csv",
                        headers={"Content-Disposition": f"attachment; filename=kwachacast_forecast_{horizon}d.csv"})
     
-    return {"model": "arimax", "horizon": horizon, "forecasts": data}
+    return {"model": "ensemble", "horizon": horizon, "forecasts": data}

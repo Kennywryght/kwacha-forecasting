@@ -75,15 +75,19 @@ class EnsembleForecaster(BaseForecaster):
                 if model is None:
                     continue
 
-                if not hasattr(model, "is_fitted"):
-                    continue
-
-                if not model.is_fitted:
-                    continue
-
-                # Check if model can predict
-                if not hasattr(model, "predict"):
-                    continue
+                # Handle both dict-style models and object-style models
+                if isinstance(model, dict):
+                    if not model.get("is_fitted", False):
+                        continue
+                    if "predict" not in model and "model" not in model:
+                        continue
+                else:
+                    if not hasattr(model, "is_fitted"):
+                        continue
+                    if not model.is_fitted:
+                        continue
+                    if not hasattr(model, "predict"):
+                        continue
 
                 valid[name] = model
 
@@ -108,7 +112,8 @@ class EnsembleForecaster(BaseForecaster):
         if self.weights and all(k in valid_models for k in self.weights):
             # Use provided weights
             total = sum(self.weights.values())
-            return {k: v / total for k, v in self.weights.items() if k in valid_models}
+            if total > 0:
+                return {k: v / total for k, v in self.weights.items() if k in valid_models}
 
         # Compute weights from metrics
         if self.weighting_scheme == "equal":
@@ -119,12 +124,23 @@ class EnsembleForecaster(BaseForecaster):
         scores = {}
 
         for name, model in valid_models.items():
+            if isinstance(model, dict):
+                # Dict-style model
+                rmse = model.get("metrics", {}).get("rmse", 999)
+                mae = model.get("metrics", {}).get("mae", 999)
+                mape = model.get("metrics", {}).get("mape", 999)
+            else:
+                # Object-style model
+                rmse = model._safe_metric("rmse", 999)
+                mae = model._safe_metric("mae", 999)
+                mape = model._safe_metric("mape", 999)
+
             if self.weighting_scheme == "rmse":
-                score = 1.0 / max(model._safe_metric("rmse", 1e-6), 1e-6)
+                score = 1.0 / max(rmse, 0.001)
             elif self.weighting_scheme == "mae":
-                score = 1.0 / max(model._safe_metric("mae", 1e-6), 1e-6)
+                score = 1.0 / max(mae, 0.001)
             elif self.weighting_scheme == "mape":
-                score = 1.0 / max(model._safe_metric("mape", 1e-6), 1e-6)
+                score = 1.0 / max(mape, 0.001)
             else:
                 score = 1.0
 
@@ -158,7 +174,7 @@ class EnsembleForecaster(BaseForecaster):
         Fit the ensemble (compute weights).
 
         Args:
-            df: Training data (optional, used for cross-validation)
+            df: Training data (optional)
         """
         logger.info("🚀 Ensemble training started")
 
@@ -171,39 +187,13 @@ class EnsembleForecaster(BaseForecaster):
         self.weights = self._compute_weights()
         self.active_models = {k: valid_models[k] for k in self.weights}
 
-        # Compute combined metrics
-        combined_metrics = {}
-        metric_keys = ["rmse", "mae", "mape", "r_squared"]
-
-        for key in metric_keys:
-            values = []
-            for name, model in self.active_models.items():
-                val = model._safe_metric(key)
-                if val < 999:  # Valid metric
-                    values.append((val, self.weights[name]))
-
-            if values:
-                if key in ["rmse", "mae", "mape"]:
-                    # Weighted average for error metrics
-                    combined_metrics[key] = round(
-                        sum(v * w for v, w in values), 4
-                    )
-                elif key == "r_squared":
-                    # Max for R²
-                    combined_metrics[key] = round(
-                        max(v for v, _ in values), 4
-                    )
-
-        self.metrics = combined_metrics
-
         self.is_fitted = True
 
-        logger.info(f"✅ Ensemble weights: {self.weights}")
-        logger.info(f"📊 Ensemble metrics: {self.metrics}")
+        logger.info(f"✅ Ensemble fitted with weights: {self.weights}")
 
     def predict(self, horizon: int) -> Dict[str, Any]:
         """
-        Generate ensemble forecast.
+        Generate ensemble forecast by combining all active models.
 
         Args:
             horizon: Number of days to forecast
@@ -221,7 +211,13 @@ class EnsembleForecaster(BaseForecaster):
         forecasts = {}
         for name, model in self.active_models.items():
             try:
-                pred = model.predict(horizon)
+                if isinstance(model, dict):
+                    # Dict-style model (xgboost, lightgbm)
+                    from api.routes.forecasts import _predict_ml_model
+                    pred = _predict_ml_model(model, horizon)
+                else:
+                    # Object-style model (arima, arimax, prophet)
+                    pred = model.predict(horizon)
                 forecasts[name] = pred
             except Exception as e:
                 logger.warning(f"{name} forecast failed: {e}")
@@ -242,7 +238,6 @@ class EnsembleForecaster(BaseForecaster):
         # Re-normalize weights
         total_weight = sum(active_weights.values())
         if total_weight <= 0:
-            # Fallback to equal weights
             n = len(forecasts)
             active_weights = {name: 1.0 / n for name in forecasts}
         else:
@@ -253,31 +248,37 @@ class EnsembleForecaster(BaseForecaster):
         blended_lower = np.zeros(horizon)
         blended_upper = np.zeros(horizon)
 
-        # Blend predictions
+        # Blend predictions using weights
         for name, forecast in forecasts.items():
             weight = active_weights.get(name, 0)
 
             if "predicted" in forecast:
-                blended_pred += np.array(forecast["predicted"]) * weight
+                preds = np.array(forecast["predicted"][:horizon])
+                blended_pred[:len(preds)] += preds * weight
 
             if "lower_bound" in forecast:
-                blended_lower += np.array(forecast["lower_bound"]) * weight
+                lowers = np.array(forecast["lower_bound"][:horizon])
+                blended_lower[:len(lowers)] += lowers * weight
             elif "lower" in forecast:
-                blended_lower += np.array(forecast["lower"]) * weight
+                lowers = np.array(forecast["lower"][:horizon])
+                blended_lower[:len(lowers)] += lowers * weight
 
             if "upper_bound" in forecast:
-                blended_upper += np.array(forecast["upper_bound"]) * weight
+                uppers = np.array(forecast["upper_bound"][:horizon])
+                blended_upper[:len(uppers)] += uppers * weight
             elif "upper" in forecast:
-                blended_upper += np.array(forecast["upper"]) * weight
+                uppers = np.array(forecast["upper"][:horizon])
+                blended_upper[:len(uppers)] += uppers * weight
 
         # If no confidence intervals, estimate from ensemble spread
         if np.all(blended_lower == 0) or np.all(blended_upper == 0):
-            std_dev = np.std([f["predicted"] for f in forecasts.values()], axis=0)
+            pred_arrays = [np.array(f["predicted"][:horizon]) for f in forecasts.values()]
+            std_dev = np.std(pred_arrays, axis=0)
             blended_lower = blended_pred - 1.96 * std_dev
             blended_upper = blended_pred + 1.96 * std_dev
 
         return self._format_forecast_output(
-            dates,
+            dates[:horizon],
             blended_pred.tolist(),
             blended_lower.tolist(),
             blended_upper.tolist()
@@ -307,7 +308,7 @@ class EnsembleForecaster(BaseForecaster):
         with open(path, "wb") as f:
             pickle.dump({
                 "metadata": metadata,
-                "models": self.models,  # Store all models
+                "models": self.models,
                 "weights": self.weights
             }, f)
 
@@ -327,8 +328,13 @@ class EnsembleForecaster(BaseForecaster):
         self.models = data.get("models", {})
         self.weights = data.get("weights", {})
 
-        # Validate loaded models
+        # Validate and set active models
         self.active_models = self._get_valid_models()
 
-        self.is_fitted = True
-        logger.info(f"✅ Ensemble loaded from {path} ({len(self.active_models)} active models)")
+        # Mark as fitted only if we have valid models
+        if self.active_models:
+            self.is_fitted = True
+            logger.info(f"✅ Ensemble loaded from {path} ({len(self.active_models)} active models)")
+        else:
+            self.is_fitted = False
+            logger.warning(f"⚠️ Ensemble loaded but no valid models found")
