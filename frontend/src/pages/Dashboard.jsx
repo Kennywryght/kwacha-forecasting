@@ -83,7 +83,9 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
     nextDayData.push({ 
       day: 1, 
       value: Number(Number(forecast1d.predicted_rate).toFixed(2)), 
-      date: fmtDate(forecast1d.target_date) 
+      date: fmtDate(forecast1d.target_date),
+      lower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null,
+      upper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null,
     });
   }
   
@@ -92,7 +94,9 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       sevenDayData.push({ 
         day: i + 1, 
         value: Number(Number(v.predicted_rate).toFixed(2)), 
-        date: fmtDate(v.target_date) 
+        date: fmtDate(v.target_date),
+        lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
+        upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
       });
     });
   }
@@ -102,7 +106,9 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
       thirtyDayData.push({ 
         day: i + 1, 
         value: Number(Number(v.predicted_rate).toFixed(2)), 
-        date: fmtDate(v.target_date) 
+        date: fmtDate(v.target_date),
+        lower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
+        upper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
       });
     });
   }
@@ -117,16 +123,22 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
         <LineChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
           <XAxis 
+            dataKey="day"
             type="number"
             domain={[1, 30]}
             tickCount={15}
+            allowDuplicatedCategory={false}
             tick={{ fill: '#8A968D', fontSize: 10 }}
             label={{ value: 'Days ahead', position: 'insideBottom', fill: '#8A968D', fontSize: 10, offset: -5 }}
           />
           <YAxis tick={{ fill: '#8A968D', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }}
-            formatter={(v, name) => {
+            formatter={(v, name, props) => {
               if (v == null) return ['N/A', name];
+              const { lower, upper } = props?.payload || {};
+              if (lower != null && upper != null) {
+                return [`MWK ${Number(v).toFixed(2)}  (range: ${lower.toFixed(2)} – ${upper.toFixed(2)})`, name];
+              }
               return [`MWK ${Number(v).toFixed(2)}`, name];
             }} />
           <Legend />
