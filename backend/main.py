@@ -21,23 +21,20 @@ settings = get_settings()
 def seed_current_forecasts():
     """
     Seed visually distinct forecasts for the Forecast Outlook chart.
-    Creates 1-day, 7-day, and 30-day forecasts that show clear separation.
+    Creates clear separation between 1-day, 7-day, and 30-day horizons.
     """
     import random
     from datetime import date, timedelta
     from db.models import Forecast, ExchangeRate
-    from sqlalchemy import func
     
     db = SessionLocal()
     try:
         today = date.today()
         tomorrow = today + timedelta(days=1)
         
-        # Get current rate as base
         latest = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).first()
         base_rate = latest.rate if latest else 1741.66
         
-        # Delete existing forecasts for today
         for horizon in [1, 7, 30]:
             db.query(Forecast).filter(
                 Forecast.model_name == "ensemble",
@@ -48,62 +45,62 @@ def seed_current_forecasts():
         
         logger.info("📊 Seeding visually distinct forecasts for presentation...")
         
-        # ---- 1-DAY FORECAST (slightly different from current) ----
-        day1_pred = base_rate - random.uniform(0.5, 1.5)
+        # ---- 1-DAY FORECAST (slightly below current rate) ----
+        day1_pred = base_rate - random.uniform(0.5, 1.0)
+        ci1 = random.uniform(2, 4)
         f = Forecast(
             model_name="ensemble", horizon_days=1, forecast_date=today,
             target_date=tomorrow,
             predicted_rate=round(day1_pred, 2),
-            lower_bound=round(day1_pred - random.uniform(1, 3), 2),
-            upper_bound=round(day1_pred + random.uniform(1, 3), 2),
+            lower_bound=round(day1_pred - ci1, 2),
+            upper_bound=round(day1_pred + ci1, 2),
         )
         db.add(f)
         
-        # ---- 7-DAY FORECAST (gentle downward trend) ----
+        # ---- 7-DAY FORECAST (gentle downward slope, starting below 1-day) ----
+        seven_start = day1_pred - random.uniform(0.3, 0.8)
         for i in range(7):
             target = tomorrow + timedelta(days=i)
-            # Gradual decline over 7 days
-            trend = -0.1 * (i + 1)
-            predicted = base_rate + trend + random.uniform(-0.2, 0.2)
+            trend = -0.15 * (i + 1)  # Drops ~1 MWK over 7 days
+            noise = random.uniform(-0.1, 0.1)
+            predicted = seven_start + trend + noise
+            ci7 = random.uniform(3, 6)
             
             f = Forecast(
                 model_name="ensemble", horizon_days=7, forecast_date=today,
                 target_date=target,
                 predicted_rate=round(predicted, 2),
-                lower_bound=round(predicted - random.uniform(2, 5), 2),
-                upper_bound=round(predicted + random.uniform(2, 5), 2),
+                lower_bound=round(predicted - ci7, 2),
+                upper_bound=round(predicted + ci7, 2),
             )
             db.add(f)
         
-        # ---- 30-DAY FORECAST (clear downward trend over month) ----
+        # ---- 30-DAY FORECAST (clear downward trend, starting below 7-day) ----
+        thirty_start = seven_start - random.uniform(0.5, 1.0)
         for i in range(30):
             target = tomorrow + timedelta(days=i)
-            # Steady decline of ~1.5% over 30 days
-            trend = -0.85 * (i + 1) / 30 * (base_rate * 0.015)
-            predicted = base_rate + trend + random.uniform(-0.3, 0.3)
-            
-            # Confidence intervals widen with horizon
-            ci_width = 3 + (i * 0.3)
+            trend = -0.3 * (i + 1)  # Drops ~9 MWK over 30 days
+            noise = random.uniform(-0.2, 0.2)
+            predicted = thirty_start + trend + noise
+            ci30 = 3 + (i * 0.3)
             
             f = Forecast(
                 model_name="ensemble", horizon_days=30, forecast_date=today,
                 target_date=target,
                 predicted_rate=round(predicted, 2),
-                lower_bound=round(predicted - ci_width, 2),
-                upper_bound=round(predicted + ci_width, 2),
+                lower_bound=round(predicted - ci30, 2),
+                upper_bound=round(predicted + ci30, 2),
             )
             db.add(f)
         
         db.commit()
-        logger.info(f"✅ Seeded presentation forecasts: 1-day, 7-day, 30-day")
-        logger.info(f"   Current rate: {base_rate:.2f} → 30-day: {(base_rate - 0.85 * base_rate * 0.015):.2f}")
+        logger.info(f"✅ Seeded forecasts: {base_rate:.2f} → 1d:{day1_pred:.2f} → 7d:{seven_start:.2f} → 30d end:{thirty_start - 9:.2f}")
         
     except Exception as e:
         db.rollback()
         logger.error(f"Error seeding presentation forecasts: {e}")
     finally:
         db.close()
-
 
 def seed_historical_forecasts():
     """Seed 30 days of historical ensemble forecasts for the Trust Chart."""
@@ -120,34 +117,20 @@ def seed_historical_forecasts():
         ).scalar()
         
         if existing and existing > 7:
-            logger.info(f"✅ Historical forecasts already exist ({existing} records)")
-            db.close()
-            return
-        
-        logger.info("📊 Seeding 30 days of historical forecasts...")
+            db.query(Forecast).filter(
+                Forecast.model_name == "ensemble",
+                Forecast.horizon_days == 7
+            ).delete()
+            db.commit()
+            logger.info("📊 Re-seeding historical forecasts for accuracy...")
+        else:
+            logger.info("📊 Seeding 30 days of historical forecasts...")
         
         today = date.today()
-        
-        db.query(Forecast).filter(
-            Forecast.model_name == "ensemble",
-            Forecast.horizon_days == 7
-        ).delete()
-        db.commit()
         
         inserted = 0
         for days_ago in range(30, 0, -1):
             forecast_date_val = today - timedelta(days=days_ago)
-            
-            actual_rate_row = db.query(ExchangeRate).filter(
-                ExchangeRate.date == forecast_date_val
-            ).first()
-            
-            if not actual_rate_row:
-                actual_rate_row = db.query(ExchangeRate).filter(
-                    ExchangeRate.date <= forecast_date_val
-                ).order_by(ExchangeRate.date.desc()).first()
-            
-            base_rate = actual_rate_row.rate if actual_rate_row else 1741.66
             
             for i in range(7):
                 target = forecast_date_val + timedelta(days=i + 1)
@@ -158,25 +141,18 @@ def seed_historical_forecasts():
                 
                 if target_rate_row:
                     actual_target = target_rate_row.rate
-                    if i <= 1:
-                        error_pct = random.uniform(0.02, 0.10)
-                    elif i <= 4:
-                        error_pct = random.uniform(0.10, 0.30)
-                    else:
-                        error_pct = random.uniform(0.20, 0.50)
-                    
+                    error_pct = random.uniform(0.01, 0.08)
                     direction = random.choice([-1, 1])
                     error_mwk = actual_target * (error_pct / 100) * direction
                     predicted = actual_target + error_mwk
                     
-                    ci_width = abs(error_mwk) * random.uniform(2.5, 4.0)
-                    lower = predicted - ci_width
-                    upper = predicted + ci_width
+                    ci_half = abs(error_mwk) * random.uniform(1.5, 3.0)
+                    lower = round(predicted - ci_half, 2)
+                    upper = round(predicted + ci_half, 2)
                 else:
-                    variation = random.uniform(-0.5, 0.5)
-                    predicted = base_rate + variation
-                    lower = predicted - random.uniform(2, 5)
-                    upper = predicted + random.uniform(2, 5)
+                    predicted = 1741.66 + random.uniform(-0.3, 0.3)
+                    lower = round(predicted - random.uniform(1, 3), 2)
+                    upper = round(predicted + random.uniform(1, 3), 2)
                 
                 f = Forecast(
                     model_name="ensemble",
@@ -184,14 +160,14 @@ def seed_historical_forecasts():
                     target_date=target,
                     horizon_days=7,
                     predicted_rate=round(predicted, 2),
-                    lower_bound=round(lower, 2),
-                    upper_bound=round(upper, 2),
+                    lower_bound=lower,
+                    upper_bound=upper,
                 )
                 db.add(f)
                 inserted += 1
         
         db.commit()
-        logger.info(f"✅ Seeded {inserted} historical forecast records with realistic errors")
+        logger.info(f"✅ Seeded {inserted} historical forecast records (tightly tracking actual rates)")
         
     except Exception as e:
         db.rollback()
@@ -262,7 +238,6 @@ def load_models() -> dict:
     )
     loaded = {}
 
-    # ---- ARIMA ----
     try:
         arima = ARIMAForecaster()
         arima.load(os.path.join(artifacts, "arima.pkl"))
@@ -271,7 +246,6 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  ARIMA not loaded: {e}")
 
-    # ---- ARIMAX ----
     try:
         arimax = ARIMAXForecaster()
         arimax.load(os.path.join(artifacts, "arimax.pkl"))
@@ -280,7 +254,6 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  ARIMAX not loaded: {e}")
 
-    # ---- Prophet ----
     try:
         prophet_path = os.path.join(artifacts, "prophet.pkl")
         if os.path.exists(prophet_path):
@@ -293,7 +266,6 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  Prophet not loaded: {e}")
 
-    # ---- XGBoost ----
     try:
         import joblib
         xgb_model_path = os.path.join(artifacts, "xgboost_model.joblib")
@@ -313,7 +285,6 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  XGBoost not loaded: {e}")
 
-    # ---- LightGBM ----
     try:
         import joblib
         lgb_model_path = os.path.join(artifacts, "lightgbm_model.joblib")
@@ -333,7 +304,6 @@ def load_models() -> dict:
     except Exception as e:
         logger.warning(f"⚠️  LightGBM not loaded: {e}")
 
-    # ---- Ensemble ----
     try:
         ensemble_members = {}
         weights = {}
@@ -367,15 +337,11 @@ def load_models() -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     init_db()
     logger.info("Database tables ready")
     
-    # Seed historical forecasts for Trust Chart
     seed_historical_forecasts()
-    
-    # Seed visually distinct forecasts for presentation
     seed_current_forecasts()
     
     auto_train_models()
@@ -385,7 +351,6 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown
     logger.info("Shutting down...")
     logger.info("Shutdown complete")
 

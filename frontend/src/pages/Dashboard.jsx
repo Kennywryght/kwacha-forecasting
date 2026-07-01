@@ -6,7 +6,7 @@ import { getForecasts, getForecastSummary, getRateStats, getForecastAccuracy, ge
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { AlertCircle, RefreshCw, Loader2, Shield, Calendar, Download, TrendingUp, TrendingDown, BarChart3, Target, Zap, DollarSign, Briefcase, GraduationCap, ShoppingCart, Home, Clock, HelpCircle, Bell, ArrowRight } from "lucide-react";
 
-const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD';
+const LIVE_RATE_URL = 'https://api.frankfurter.app/latest?from=USD&to=MWK';
 
 const fmtDate = (d) => {
   if (!d) return '';
@@ -73,124 +73,102 @@ function TrustChart({ history, forecasts, historicalForecasts }) {
   );
 }
 
-// ── Error Bar Dot Renderer ───────────────────────────────────────────────────
-const ErrorBarDot = ({ cx, cy, payload, color, lowerKey = 'lower', upperKey = 'upper', valueKey = 'value' }) => {
-  if (!payload) return null;
-  const lower = payload[lowerKey];
-  const upper = payload[upperKey];
-  const value = payload[valueKey];
-  
-  if (lower == null || upper == null) {
-    return <circle cx={cx} cy={cy} r={4} fill={color} stroke="#1A211D" strokeWidth={1.5} />;
-  }
-  
-  return (
-    <g className="error-bar-group" style={{ cursor: 'pointer' }}>
-      <line x1={cx} y1={cy - 8} x2={cx} y2={cy + 8} stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
-      <line x1={cx - 4} y1={cy - 8} x2={cx + 4} y2={cy - 8} stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
-      <line x1={cx - 4} y1={cy + 8} x2={cx + 4} y2={cy + 8} stroke={color} strokeWidth={1.5} strokeOpacity={0.5} />
-      <circle cx={cx} cy={cy} r={5} fill={color} stroke="#1A211D" strokeWidth={1.5} />
-      <title>{`Predicted: ${value?.toFixed(2)}\nUpper (95%): ${upper.toFixed(2)}\nLower (95%): ${lower.toFixed(2)}`}</title>
-    </g>
-  );
-};
-
 // ── Forecast Outlook ──────────────────────────────────────────────────────────
 function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
-  const allData = [];
-
-  const upsert = (dayNum, fields) => {
-    let row = allData.find(d => d.dayNum === dayNum);
-    if (!row) {
-      row = { day: `Day ${dayNum}`, dayNum };
-      allData.push(row);
-    }
-    Object.assign(row, fields);
-  };
-
-  // Next day - just 1 dot at day 1, with its own bounds
+  const nextDayData = [];
+  const sevenDayData = [];
+  const thirtyDayData = [];
+  
   if (forecast1d?.predicted_rate && forecast1d?.target_date) {
-    upsert(1, {
-      nextDay: Number(Number(forecast1d.predicted_rate).toFixed(2)),
-      nextDayLower: forecast1d.lower_bound != null ? Number(Number(forecast1d.lower_bound).toFixed(2)) : null,
-      nextDayUpper: forecast1d.upper_bound != null ? Number(Number(forecast1d.upper_bound).toFixed(2)) : null,
-      date: fmtDate(forecast1d.target_date),
+    nextDayData.push({ 
+      day: 1, 
+      value: Number(Number(forecast1d.predicted_rate).toFixed(2)), 
+      date: fmtDate(forecast1d.target_date) 
     });
   }
-
-  // 7 days - days 1-7, each with its own bounds
+  
   if (forecast7d?.forecasts) {
     forecast7d.forecasts.forEach((v, i) => {
-      upsert(i + 1, {
-        sevenDay: Number(Number(v.predicted_rate).toFixed(2)),
-        sevenDayLower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
-        sevenDayUpper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
-        date: fmtDate(v.target_date),
+      sevenDayData.push({ 
+        day: i + 1, 
+        value: Number(Number(v.predicted_rate).toFixed(2)), 
+        date: fmtDate(v.target_date) 
       });
     });
   }
-
-  // 30 days - days 1-30, each with its own bounds
+  
   if (forecast30d?.forecasts) {
     forecast30d.forecasts.forEach((v, i) => {
-      upsert(i + 1, {
-        thirtyDay: Number(Number(v.predicted_rate).toFixed(2)),
-        thirtyDayLower: v.lower_bound != null ? Number(Number(v.lower_bound).toFixed(2)) : null,
-        thirtyDayUpper: v.upper_bound != null ? Number(Number(v.upper_bound).toFixed(2)) : null,
-        date: fmtDate(v.target_date),
+      thirtyDayData.push({ 
+        day: i + 1, 
+        value: Number(Number(v.predicted_rate).toFixed(2)), 
+        date: fmtDate(v.target_date) 
       });
     });
   }
-
-  // Sort by day number
-  allData.sort((a, b) => a.dayNum - b.dayNum);
-
-  if (!allData.length) return null;
-
-  const hasConfidenceIntervals = allData.some(
-    d => (d.nextDayLower != null && d.nextDayUpper != null) ||
-         (d.sevenDayLower != null && d.sevenDayUpper != null) ||
-         (d.thirtyDayLower != null && d.thirtyDayUpper != null)
-  );
+  
+  if (!nextDayData.length && !sevenDayData.length && !thirtyDayData.length) return null;
 
   return (
     <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
       <h3 className="text-sm font-semibold text-stone-300 mb-3">Forecast outlook</h3>
-      <p className="text-xs text-stone-500 mb-4">
-        {hasConfidenceIntervals
-          ? "Projected Kwacha movement with 95% confidence intervals."
-          : "Projected Kwacha movement across timeframes."}
-      </p>
+      <p className="text-xs text-stone-500 mb-4">Projected Kwacha movement across timeframes.</p>
       <ResponsiveContainer width="100%" height={250}>
-        <LineChart data={allData}>
+        <LineChart margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#2A332D" />
-          <XAxis dataKey="day" tick={{ fill: '#8A968D', fontSize: 10 }} interval={2} />
+          <XAxis 
+            type="number"
+            domain={[1, 30]}
+            tickCount={15}
+            tick={{ fill: '#8A968D', fontSize: 10 }}
+            label={{ value: 'Days ahead', position: 'insideBottom', fill: '#8A968D', fontSize: 10, offset: -5 }}
+          />
           <YAxis tick={{ fill: '#8A968D', fontSize: 10 }} domain={['auto', 'auto']} tickFormatter={(v) => v.toFixed(0)} />
           <Tooltip contentStyle={{ backgroundColor: '#1A211D', border: 'none', borderRadius: '8px', color: '#D2D8D2', fontSize: 12 }}
-            formatter={(v, name, props) => {
+            formatter={(v, name) => {
               if (v == null) return ['N/A', name];
-              const row = props.payload;
-              let label, lower, upper;
-              if (name === 'nextDay') { label = 'Next day'; lower = row.nextDayLower; upper = row.nextDayUpper; }
-              else if (name === 'sevenDay') { label = '7-day forecast'; lower = row.sevenDayLower; upper = row.sevenDayUpper; }
-              else if (name === 'thirtyDay') { label = '30-day forecast'; lower = row.thirtyDayLower; upper = row.thirtyDayUpper; }
-              else { label = name; }
-              const range = (lower != null && upper != null) ? ` (${lower.toFixed(2)}–${upper.toFixed(2)})` : '';
-              return [`MWK ${Number(v).toFixed(2)}${range}`, label];
+              return [`MWK ${Number(v).toFixed(2)}`, name];
             }} />
           <Legend />
-          {/* Gold dot for next day */}
-          <Line type="monotone" dataKey="nextDay" stroke="#E0AC4F" strokeWidth={0}
-            dot={(props) => <ErrorBarDot {...props} color="#E0AC4F" lowerKey="nextDayLower" upperKey="nextDayUpper" valueKey="nextDay" />}
-            name="Next day" connectNulls={false} />
-          {/* Blue line for 7 days */}
-          <Line type="monotone" dataKey="sevenDay" stroke="#7DA0C4" strokeWidth={2}
-            dot={(props) => <ErrorBarDot {...props} color="#7DA0C4" lowerKey="sevenDayLower" upperKey="sevenDayUpper" valueKey="sevenDay" />}
-            name="7 days" connectNulls={false} />
-          {/* Green line for 30 days */}
-          <Line type="monotone" dataKey="thirtyDay" stroke="#6FAE82" strokeWidth={2}
-            dot={(props) => <ErrorBarDot {...props} color="#6FAE82" lowerKey="thirtyDayLower" upperKey="thirtyDayUpper" valueKey="thirtyDay" />}
-            name="30 days" connectNulls={false} />
+          
+          {nextDayData.length > 0 && (
+            <Line 
+              data={nextDayData}
+              type="monotone" 
+              dataKey="value" 
+              stroke="#E0AC4F" 
+              strokeWidth={0}
+              dot={{ r: 7, fill: '#E0AC4F', stroke: '#1A211D', strokeWidth: 2 }}
+              name="Next day"
+              isAnimationActive={false}
+            />
+          )}
+          
+          {sevenDayData.length > 0 && (
+            <Line 
+              data={sevenDayData}
+              type="monotone" 
+              dataKey="value" 
+              stroke="#7DA0C4" 
+              strokeWidth={2}
+              dot={{ r: 4, fill: '#7DA0C4', stroke: '#1A211D', strokeWidth: 1.5 }}
+              name="7 days"
+              isAnimationActive={false}
+            />
+          )}
+          
+          {thirtyDayData.length > 0 && (
+            <Line 
+              data={thirtyDayData}
+              type="monotone" 
+              dataKey="value" 
+              stroke="#6FAE82" 
+              strokeWidth={2}
+              dot={{ r: 3, fill: '#6FAE82', stroke: '#1A211D', strokeWidth: 1 }}
+              name="30 days"
+              isAnimationActive={false}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
       <details className="mt-3 group">
@@ -199,7 +177,6 @@ function ForecastOutlook({ forecast1d, forecast7d, forecast30d }) {
           <p>• <span className="text-stone-300 font-medium">Gold dot</span> = tomorrow's predicted rate.</p>
           <p>• <span className="text-stone-300 font-medium">Blue line</span> = 7-day forecast.</p>
           <p>• <span className="text-stone-300 font-medium">Green line</span> = 30-day forecast showing the longer-term trend.</p>
-          {hasConfidenceIntervals && <p>• <span className="text-stone-300 font-medium">Error bars (┬)</span> on each dot show the 95% confidence range — hover or check the tooltip for exact upper/lower bounds.</p>}
         </div>
       </details>
     </div>
@@ -608,7 +585,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => { fetchAllData(); }, [noForecasts]);
-  useEffect(() => { fetch(LIVE_RATE_URL).then(r => r.json()).then(d => { if (d?.rates?.MWK) setLiveRate({ rate: d.rates.MWK }); }).catch(() => {}); }, []);
+  
+  useEffect(() => { 
+    fetch(LIVE_RATE_URL)
+      .then(r => r.json())
+      .then(d => { 
+        if (d?.rates?.MWK) setLiveRate({ rate: d.rates.MWK }); 
+      })
+      .catch(() => {}); 
+  }, []);
 
   const displayRate = liveRate || latestRate;
 

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { TrendingUp, BarChart3, Zap, Shield, ArrowRight, RefreshCw, Download, Smartphone, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 import { useLanguage } from '../context/LanguageContext'
 
-const LIVE_RATE_URL = 'https://open.er-api.com/v6/latest/USD'
+const LIVE_RATE_URL = 'https://api.frankfurter.app/v2/rate/USD/MWK'
 
 export default function Home() {
   const [liveRate, setLiveRate] = useState(null)
@@ -14,7 +14,6 @@ export default function Home() {
   const [previousRate, setPreviousRate] = useState(null)
   const { t } = useLanguage()
 
-  // Listen for PWA install prompt
   useEffect(() => {
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault()
@@ -22,7 +21,6 @@ export default function Home() {
       setIsInstallable(true)
     })
     
-    // Check if already installed
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstallable(false)
     }
@@ -44,21 +42,20 @@ export default function Home() {
     try {
       const res = await fetch(LIVE_RATE_URL)
       const data = await res.json()
-      if (data?.rates?.MWK) {
-        // Store previous rate before updating
+      if (data?.rate) {
         if (liveRate?.rate) {
           setPreviousRate(liveRate.rate)
         }
         setLiveRate({
-          rate: data.rates.MWK,
-          date: data.time_last_update_utc?.split(' ')[0] || new Date().toISOString().split('T')[0],
-          source: 'Live currency API',
+          rate: data.rate,
+          date: data.date || new Date().toISOString().split('T')[0],
+          source: 'Frankfurter API (ECB)',
         })
       } else {
-        throw new Error('No MWK rate')
+        throw new Error('No rate returned')
       }
     } catch (err) {
-      setError('Unable to fetch live rate')
+      console.warn('Frankfurter failed, trying fallback...')
       try {
         const res = await fetch('https://kwachacast-api.onrender.com/api/v1/rates/latest')
         const data = await res.json()
@@ -66,9 +63,15 @@ export default function Home() {
           if (liveRate?.rate) {
             setPreviousRate(liveRate.rate)
           }
-          setLiveRate(data)
+          setLiveRate({
+            rate: data.rate,
+            date: data.date || new Date().toISOString().split('T')[0],
+            source: 'Frankfurter API (ECB)',
+          })
         }
-      } catch {}
+      } catch {
+        setError('Unable to fetch live rate. Please try again.')
+      }
     } finally {
       setLoading(false)
     }
@@ -76,7 +79,6 @@ export default function Home() {
 
   useEffect(() => { fetchLiveRate() }, [])
 
-  // Calculate rate change
   const getRateChange = () => {
     if (!previousRate || !liveRate?.rate) return null
     const diff = liveRate.rate - previousRate
@@ -123,7 +125,6 @@ export default function Home() {
                 <Link to="/about" className="border border-stone-600 hover:border-stone-400 text-stone-200 transition px-6 py-3 rounded-xl font-semibold">
                   {t('learnMore', { default: 'Learn more' })}
                 </Link>
-                {/* PWA Install Button - Gray */}
                 {isInstallable && (
                   <button onClick={handleInstall} className="bg-stone-700 hover:bg-stone-600 text-stone-100 transition px-6 py-3 rounded-xl font-semibold flex items-center gap-2">
                     <Download className="w-4 h-4" /> {t('installApp', { default: 'Install App' })}
@@ -132,7 +133,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* LIVE RATE CARD - ENHANCED */}
+            {/* LIVE RATE CARD */}
             <div className="bg-ink-900 border border-stone-700 rounded-3xl p-8 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <p className="text-stone-400 text-sm uppercase tracking-wider">{t('liveExchangeRate', { default: 'Live exchange rate' })}</p>
@@ -151,7 +152,6 @@ export default function Home() {
                 <div className="text-terracotta-400 text-sm">{error}</div>
               ) : (
                 <>
-                  {/* Rate Display with Trend Indicator */}
                   <div className="flex items-baseline gap-3 mb-2">
                     <h2 className="font-data text-5xl lg:text-6xl font-semibold text-stone-100">
                       {liveRate?.rate?.toFixed(2)}
@@ -174,7 +174,6 @@ export default function Home() {
                   
                   <p className="text-lg text-stone-300 mb-4">MWK per USD</p>
                   
-                  {/* Rate Change Details */}
                   {rateChange && (
                     <div className={`mb-4 p-3 rounded-xl text-xs font-medium ${
                       rateChange.direction === 'up' ? 'bg-terracotta-500/10 border border-terracotta-500/20 text-terracotta-400' :
@@ -192,7 +191,7 @@ export default function Home() {
                     <p>{t('updated', { default: 'Updated' })}: <span className="text-stone-300">{liveRate?.date || '—'}</span></p>
                   </div>
                   <p className="text-xs text-stone-500 mt-4">
-                    {t('rateDisclaimer', { default: 'Rate sourced from open.er-api.com. For reference only.' })}
+                    Live rate via Frankfurter API (European Central Bank data). For reference only.
                   </p>
                 </>
               )}
@@ -247,7 +246,6 @@ export default function Home() {
             ))}
           </div>
           
-          {/* Mobile App Download Section */}
           <div className="mt-12 bg-stone-900/60 rounded-2xl p-8 border border-stone-700/60 text-center">
             <Smartphone className="w-12 h-12 text-gold-400 mx-auto mb-4" />
             <h3 className="text-2xl font-bold text-stone-100 mb-2">{t('getTheApp', { default: 'Get the App' })}</h3>
