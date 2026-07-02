@@ -21,20 +21,21 @@ settings = get_settings()
 def seed_current_forecasts():
     """
     Seed visually distinct forecasts for the Forecast Outlook chart.
-    Creates clear separation between 1-day, 7-day, and 30-day horizons.
+    Creates gentle but visible slopes – realistic for Malawi's managed float.
     """
     import random
     from datetime import date, timedelta
     from db.models import Forecast, ExchangeRate
-    
+
     db = SessionLocal()
     try:
         today = date.today()
         tomorrow = today + timedelta(days=1)
-        
+
         latest = db.query(ExchangeRate).order_by(ExchangeRate.date.desc()).first()
         base_rate = latest.rate if latest else 1741.66
-        
+
+        # Remove old forecasts for today
         for horizon in [1, 7, 30]:
             db.query(Forecast).filter(
                 Forecast.model_name == "ensemble",
@@ -42,12 +43,12 @@ def seed_current_forecasts():
                 Forecast.forecast_date == today
             ).delete()
         db.commit()
-        
-        logger.info("📊 Seeding visually distinct forecasts for presentation...")
-        
-        # ---- 1-DAY FORECAST (slightly below current rate) ----
-        day1_pred = base_rate - random.uniform(0.5, 1.0)
-        ci1 = random.uniform(2, 4)
+
+        logger.info("📊 Seeding gentle‑slope forecasts for presentation...")
+
+        # ---- 1‑DAY FORECAST (slightly below current rate) ----
+        day1_pred = base_rate - random.uniform(0.3, 0.7)
+        ci1 = random.uniform(1.5, 3.0)
         f = Forecast(
             model_name="ensemble", horizon_days=1, forecast_date=today,
             target_date=tomorrow,
@@ -56,16 +57,16 @@ def seed_current_forecasts():
             upper_bound=round(day1_pred + ci1, 2),
         )
         db.add(f)
-        
-        # ---- 7-DAY FORECAST (gentle downward slope, starting below 1-day) ----
-        seven_start = day1_pred - random.uniform(0.3, 0.8)
+
+        # ---- 7‑DAY FORECAST (gentle downward slope, ~0.5 MWK total) ----
+        seven_start = day1_pred - random.uniform(0.2, 0.4)
         for i in range(7):
             target = tomorrow + timedelta(days=i)
-            trend = -0.15 * (i + 1)  # Drops ~1 MWK over 7 days
-            noise = random.uniform(-0.1, 0.1)
+            trend = -0.07 * (i + 1)          # ≈ -0.5 MWK over 7 days
+            noise = random.uniform(-0.05, 0.05)
             predicted = seven_start + trend + noise
-            ci7 = random.uniform(3, 6)
-            
+            ci7 = random.uniform(2, 4)
+
             f = Forecast(
                 model_name="ensemble", horizon_days=7, forecast_date=today,
                 target_date=target,
@@ -74,16 +75,16 @@ def seed_current_forecasts():
                 upper_bound=round(predicted + ci7, 2),
             )
             db.add(f)
-        
-        # ---- 30-DAY FORECAST (clear downward trend, starting below 7-day) ----
-        thirty_start = seven_start - random.uniform(0.5, 1.0)
+
+        # ---- 30‑DAY FORECAST (visible downward trend, ~4‑5 MWK total) ----
+        thirty_start = seven_start - random.uniform(0.3, 0.6)
         for i in range(30):
             target = tomorrow + timedelta(days=i)
-            trend = -0.3 * (i + 1)  # Drops ~9 MWK over 30 days
-            noise = random.uniform(-0.2, 0.2)
+            trend = -0.15 * (i + 1)          # ≈ -4.5 MWK over 30 days
+            noise = random.uniform(-0.1, 0.1)
             predicted = thirty_start + trend + noise
-            ci30 = 3 + (i * 0.3)
-            
+            ci30 = 2.5 + (i * 0.2)
+
             f = Forecast(
                 model_name="ensemble", horizon_days=30, forecast_date=today,
                 target_date=target,
@@ -92,16 +93,16 @@ def seed_current_forecasts():
                 upper_bound=round(predicted + ci30, 2),
             )
             db.add(f)
-        
+
         db.commit()
-        logger.info(f"✅ Seeded forecasts: {base_rate:.2f} → 1d:{day1_pred:.2f} → 7d:{seven_start:.2f} → 30d end:{thirty_start - 9:.2f}")
-        
+        logger.info(f"✅ Seeded forecasts: {base_rate:.2f} → 1d:{day1_pred:.2f} → 7d end:{seven_start-0.5:.2f} → 30d end:{thirty_start-4.5:.2f}")
+
     except Exception as e:
         db.rollback()
         logger.error(f"Error seeding presentation forecasts: {e}")
     finally:
         db.close()
-
+        
 def seed_historical_forecasts():
     """Seed 30 days of historical ensemble forecasts for the Trust Chart."""
     import random

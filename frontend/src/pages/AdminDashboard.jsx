@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { getForecasts, getModelMetrics, getRateStats, getForecastAccuracy } from "../utils/api";
-import { RefreshCw, Loader2, TrendingUp, BarChart3, Shield, Activity, Database, Cpu, ExternalLink, Server, Zap, Clock, Eye, Download } from "lucide-react";
+import { getForecasts, getModelMetrics, getRateStats } from "../utils/api";
+import { getApiUrl } from "../config";
+import { RefreshCw, Loader2, TrendingUp, BarChart3, Shield, Activity, Database, ExternalLink, Server, Zap, Clock, Eye } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 function StatusBadge({ status }) {
@@ -76,7 +77,8 @@ function ForecastPreview() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('https://kwachacast-api.onrender.com/api/v1/forecasts/all?horizon=7')
+    const API_BASE = `${getApiUrl()}/api/v1`;
+    fetch(`${API_BASE}/forecasts/all?horizon=7`)
       .then(r => r.json())
       .then(data => {
         const modelPreviews = {};
@@ -158,7 +160,8 @@ function ModelForecastChart() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`https://kwachacast-api.onrender.com/api/v1/forecasts/all?horizon=${selectedHorizon}`)
+    const API_BASE = `${getApiUrl()}/api/v1`;
+    fetch(`${API_BASE}/forecasts/all?horizon=${selectedHorizon}`)
       .then(r => r.json())
       .then(data => {
         if (data && typeof data === 'object' && !data.status) {
@@ -260,8 +263,8 @@ function ModelForecastChart() {
   );
 }
 
-// ── Data Freshness ────────────────────────────────────────────────────────────
-function DataFreshness({ stats, accuracy, metrics }) {
+// ── System Status ────────────────────────────────────────────────────────────
+function SystemStatus({ stats, metrics }) {
   const activeModels = metrics?.length || 0;
   
   return (
@@ -287,16 +290,6 @@ function DataFreshness({ stats, accuracy, metrics }) {
             {stats ? `${stats.change_7d > 0 ? '+' : ''}${stats.change_7d?.toFixed(2)} (${stats.change_pct_7d?.toFixed(2)}%)` : 'Unknown'}
           </span>
         </div>
-        <div className="flex items-center justify-between">
-          <span className="text-stone-400 text-sm">Accuracy data points</span>
-          <span className="text-stone-100 text-sm">{accuracy?.comparisons?.length || 0}</span>
-        </div>
-        <div className="flex items-center justify-between">
-          <span className="text-stone-400 text-sm">Forecasts within range</span>
-          <span className="text-gold-400 text-sm font-medium">
-            {accuracy?.within_range_pct ? `${accuracy.within_range_pct}%` : 'N/A'}
-          </span>
-        </div>
         <hr className="border-stone-700" />
         <div className="flex items-center justify-between">
           <span className="text-stone-400 text-sm">API documentation</span>
@@ -310,53 +303,6 @@ function DataFreshness({ stats, accuracy, metrics }) {
           </a>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Accuracy Tracking ─────────────────────────────────────────────────────────
-function AccuracyTracking({ accuracy, metrics }) {
-  const bestModel = metrics?.length > 0 
-    ? metrics.reduce((a, b) => (a.mape || 99) < (b.mape || 99) ? a : b) 
-    : null;
-
-  return (
-    <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
-      <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
-        <Shield className="w-4 h-4 text-gold-400" />
-        Forecast Accuracy
-      </h3>
-      
-      {accuracy?.comparisons?.length > 0 ? (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-            {[
-              { label: "Avg Error", value: `${accuracy.avg_error_mwk} MWK` },
-              { label: "Error Rate", value: `${accuracy.avg_error_pct}%` },
-              { label: "Within Range", value: `${accuracy.within_range_pct}%` },
-              { label: "Data Points", value: accuracy.comparisons.length },
-            ].map((item, i) => (
-              <div key={i} className="bg-stone-700/40 rounded-xl p-3 text-center">
-                <p className="text-stone-400 text-xs">{item.label}</p>
-                <p className={`text-lg font-bold ${i === 2 ? 'text-gold-400' : 'text-stone-100'}`}>
-                  {item.value}
-                </p>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="bg-stone-700/40 rounded-xl p-4">
-          <p className="text-stone-400 text-sm">
-            No historical accuracy data yet. Requires 7+ days of consecutive forecast generation to compare predictions against actual rates.
-          </p>
-          {bestModel && (
-            <p className="text-stone-500 text-xs mt-2">
-              Training accuracy: <span className="text-gold-400 font-medium">{bestModel.model_name?.toUpperCase()}</span> achieves {bestModel.mape?.toFixed(4)}% MAPE
-            </p>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -391,7 +337,6 @@ export default function AdminDashboard() {
   const [msg, setMsg] = useState(null);
   const [metrics, setMetrics] = useState([]);
   const [stats, setStats] = useState(null);
-  const [accuracy, setAccuracy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState([
     { type: 'info', message: 'Admin dashboard initialized', time: new Date().toLocaleTimeString() }
@@ -404,14 +349,12 @@ export default function AdminDashboard() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [m, s, a] = await Promise.all([
+      const [m, s] = await Promise.all([
         getModelMetrics().catch(() => []),
         getRateStats().catch(() => null),
-        getForecastAccuracy().catch(() => null),
       ]);
       if (m) setMetrics(Array.isArray(m) ? m : []);
       if (s) setStats(s);
-      if (a) setAccuracy(a);
       addActivity('success', 'Dashboard data refreshed');
     } catch {
       addActivity('error', 'Failed to fetch dashboard data');
@@ -479,7 +422,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-display text-2xl font-semibold text-stone-100">Admin Dashboard</h1>
@@ -499,7 +441,6 @@ export default function AdminDashboard() {
       </div>
       <div className="rate-wave-divider" />
 
-      {/* Status Message */}
       {msg && (
         <div className={`rounded-xl p-3 text-sm font-medium ${
           msg.includes('✅') 
@@ -512,7 +453,6 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Quick Actions */}
       <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
         <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-400" />
@@ -547,24 +487,20 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Stats Cards */}
       {!loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <StatCard icon={Database} title="Active Models" value={metrics.length} subtitle="Loaded & fitted" color="text-blue-400" />
           <StatCard icon={TrendingUp} title="Latest Rate" value={stats?.current ? `MWK ${stats.current.toFixed(2)}` : "—"} subtitle="Current MWK/USD" color="text-gold-400" />
           <StatCard icon={Shield} title="Best MAPE" value={bestModel ? `${bestModel.mape?.toFixed(4)}%` : "—"} subtitle={bestModel?.model_name?.toUpperCase()} color="text-gold-400" />
-          <StatCard icon={Cpu} title="Accuracy Data" value={accuracy?.comparisons?.length || 0} subtitle="Historical comparisons" color="text-purple-400" />
         </div>
       )}
 
-      {/* Loading State */}
       {loading && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="w-8 h-8 text-gold-400 animate-spin" />
         </div>
       )}
 
-      {/* Model Performance */}
       {!loading && (
         <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
           <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">
@@ -575,21 +511,16 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* Model Forecast Chart */}
       {!loading && <ModelForecastChart />}
 
-      {/* Forecast Preview Table */}
       {!loading && <ForecastPreview />}
 
-      {/* System Status + Accuracy */}
       {!loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <DataFreshness stats={stats} accuracy={accuracy} metrics={metrics} />
-          <AccuracyTracking accuracy={accuracy} metrics={metrics} />
+        <div className="grid grid-cols-1 gap-6">
+          <SystemStatus stats={stats} metrics={metrics} />
         </div>
       )}
 
-      {/* Activity Log */}
       {!loading && (
         <div className="bg-stone-900/60 rounded-2xl p-5 border border-stone-700/60">
           <h3 className="text-sm font-semibold text-stone-300 mb-4 flex items-center gap-2">

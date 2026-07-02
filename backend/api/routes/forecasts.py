@@ -582,10 +582,20 @@ def retrain_models(background_tasks: BackgroundTasks, db: Session = Depends(get_
 @router.get("/accuracy")
 def get_forecast_accuracy(db: Session = Depends(get_db)):
     """Compare past forecasts against actual rates to show model accuracy."""
-    records = crud.get_latest_forecasts(db, model_name="ensemble", horizon=7)
+    
+    # Get ALL historical ensemble 7-day forecasts, not just the latest
+    today = date.today()
+    thirty_days_ago = today - timedelta(days=30)
+    
+    records = db.query(Forecast).filter(
+        Forecast.model_name == "ensemble",
+        Forecast.horizon_days == 7,
+        Forecast.forecast_date >= thirty_days_ago,
+        Forecast.forecast_date < today  # Exclude today's forecasts
+    ).order_by(Forecast.forecast_date.asc()).all()
 
     if not records:
-        return {"message": "No historical forecasts to compare yet."}
+        return {"message": "No historical forecasts to compare yet.", "comparisons": []}
 
     results = []
     for f in records:
@@ -594,6 +604,7 @@ def get_forecast_accuracy(db: Session = Depends(get_db)):
             error = abs(f.predicted_rate - actual.rate)
             results.append({
                 "target_date": str(f.target_date),
+                "forecast_date": str(f.forecast_date),
                 "predicted": round(f.predicted_rate, 2),
                 "actual": round(actual.rate, 2),
                 "error_mwk": round(error, 2),
@@ -602,17 +613,16 @@ def get_forecast_accuracy(db: Session = Depends(get_db)):
             })
 
     if not results:
-        return {"message": "No matching actual rates found for comparison yet."}
+        return {"message": "No matching actual rates found for comparison yet.", "comparisons": []}
 
     return {
         "model": "ensemble",
-        "forecast_date": str(records[0].forecast_date),
         "comparisons": results,
+        "total_comparisons": len(results),
         "avg_error_mwk": round(sum(r["error_mwk"] for r in results) / len(results), 2),
         "avg_error_pct": round(sum(r["error_pct"] for r in results) / len(results), 4),
         "within_range_pct": round(sum(1 for r in results if r["within_range"]) / len(results) * 100, 1),
     }
-
 
 @router.get("/quick")
 def get_quick_forecast(db: Session = Depends(get_db)):
