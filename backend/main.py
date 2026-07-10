@@ -20,8 +20,9 @@ settings = get_settings()
 
 def seed_current_forecasts():
     """
-    Seed visually distinct forecasts for the Forecast Outlook chart.
-    Creates gentle but visible slopes – realistic for Malawi's managed float.
+    Seed forecasts where the 7-day and 30-day forecasts share identical
+    values for the first 7 days. Only Days 8-30 of the 30-day forecast
+    extend beyond the 7-day line with their own trend.
     """
     import random
     from datetime import date, timedelta
@@ -44,65 +45,96 @@ def seed_current_forecasts():
             ).delete()
         db.commit()
 
-        logger.info("📊 Seeding gentle‑slope forecasts for presentation...")
+        logger.info("📊 Seeding forecasts: 7-day and 30-day share identical Days 1-7...")
 
-        # ---- 1‑DAY FORECAST (slightly below current rate) ----
-        day1_pred = base_rate - random.uniform(0.3, 0.7)
-        ci1 = random.uniform(1.5, 3.0)
+        # ---- SHARED DAY 1 VALUE ----
+        day1_pred = round(base_rate - random.uniform(0.3, 0.7), 2)
+        ci1_lower = round(day1_pred - random.uniform(1.5, 3.0), 2)
+        ci1_upper = round(day1_pred + random.uniform(1.5, 3.0), 2)
+
+        # Pre-compute ALL 7 days that will be shared between 7-day and 30-day
+        shared_7_days = []
+        shared_7_days.append({
+            "day": 1,
+            "predicted": day1_pred,
+            "lower": ci1_lower,
+            "upper": ci1_upper
+        })
+
+        weekly_trend = random.uniform(-0.3, 0.1)
+        for i in range(1, 7):  # Days 2-7
+            trend = (weekly_trend / 7) * (i + 1)
+            noise = random.uniform(-0.05, 0.05)
+            pred = round(day1_pred + trend + noise, 2)
+            ci = random.uniform(2, 4)
+            shared_7_days.append({
+                "day": i + 1,
+                "predicted": pred,
+                "lower": round(pred - ci, 2),
+                "upper": round(pred + ci, 2)
+            })
+
+        logger.info(f"   Shared Days 1-7 values: {[d['predicted'] for d in shared_7_days]}")
+
+        # ---- 1-DAY FORECAST (Day 1 only) ----
+        d1 = shared_7_days[0]
         f = Forecast(
             model_name="ensemble", horizon_days=1, forecast_date=today,
             target_date=tomorrow,
-            predicted_rate=round(day1_pred, 2),
-            lower_bound=round(day1_pred - ci1, 2),
-            upper_bound=round(day1_pred + ci1, 2),
+            predicted_rate=d1["predicted"],
+            lower_bound=d1["lower"],
+            upper_bound=d1["upper"],
         )
         db.add(f)
 
-        # ---- 7‑DAY FORECAST (gentle downward slope, ~0.5 MWK total) ----
-        seven_start = day1_pred - random.uniform(0.2, 0.4)
-        for i in range(7):
-            target = tomorrow + timedelta(days=i)
-            trend = -0.07 * (i + 1)          # ≈ -0.5 MWK over 7 days
-            noise = random.uniform(-0.05, 0.05)
-            predicted = seven_start + trend + noise
-            ci7 = random.uniform(2, 4)
-
+        # ---- 7-DAY FORECAST (Days 1-7) ----
+        for d in shared_7_days:
+            target = tomorrow + timedelta(days=d["day"] - 1)
             f = Forecast(
                 model_name="ensemble", horizon_days=7, forecast_date=today,
                 target_date=target,
-                predicted_rate=round(predicted, 2),
-                lower_bound=round(predicted - ci7, 2),
-                upper_bound=round(predicted + ci7, 2),
+                predicted_rate=d["predicted"],
+                lower_bound=d["lower"],
+                upper_bound=d["upper"],
             )
             db.add(f)
 
-        # ---- 30‑DAY FORECAST (visible downward trend, ~4‑5 MWK total) ----
-        thirty_start = seven_start - random.uniform(0.3, 0.6)
+        # ---- 30-DAY FORECAST ----
+        monthly_trend = random.uniform(-0.8, 0.1)
         for i in range(30):
             target = tomorrow + timedelta(days=i)
-            trend = -0.15 * (i + 1)          # ≈ -4.5 MWK over 30 days
-            noise = random.uniform(-0.1, 0.1)
-            predicted = thirty_start + trend + noise
-            ci30 = 2.5 + (i * 0.2)
+            if i < 7:
+                # Days 1-7: IDENTICAL to 7-day forecast
+                d = shared_7_days[i]
+                predicted = d["predicted"]
+                lower = d["lower"]
+                upper = d["upper"]
+            else:
+                # Days 8-30: extend with monthly trend
+                trend = (monthly_trend / 30) * (i + 1)
+                noise = random.uniform(-0.1, 0.1)
+                predicted = round(day1_pred + trend + noise, 2)
+                ci = 2.5 + (i * 0.2)
+                lower = round(predicted - ci, 2)
+                upper = round(predicted + ci, 2)
 
             f = Forecast(
                 model_name="ensemble", horizon_days=30, forecast_date=today,
                 target_date=target,
-                predicted_rate=round(predicted, 2),
-                lower_bound=round(predicted - ci30, 2),
-                upper_bound=round(predicted + ci30, 2),
+                predicted_rate=predicted,
+                lower_bound=lower,
+                upper_bound=upper,
             )
             db.add(f)
 
         db.commit()
-        logger.info(f"✅ Seeded forecasts: {base_rate:.2f} → 1d:{day1_pred:.2f} → 7d end:{seven_start-0.5:.2f} → 30d end:{thirty_start-4.5:.2f}")
+        logger.info(f"✅ Seeded forecasts: 7-day and 30-day share identical Days 1-7")
 
     except Exception as e:
         db.rollback()
         logger.error(f"Error seeding presentation forecasts: {e}")
     finally:
         db.close()
-        
 def seed_historical_forecasts():
     """Seed 30 days of historical ensemble forecasts for the Trust Chart."""
     import random
